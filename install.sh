@@ -104,6 +104,20 @@ fi
 
 info "PHP target version: ${PHP_VER}"
 
+DB_SERVER_PKG=""
+for pkg in mysql-server default-mysql-server mariadb-server; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+        DB_SERVER_PKG="$pkg"
+        break
+    fi
+done
+
+if [[ -z "$DB_SERVER_PKG" ]]; then
+    error "No supported database server package found (checked mysql-server/default-mysql-server/mariadb-server)."
+fi
+
+info "Database server package: ${DB_SERVER_PKG}"
+
 apt-get install -y -qq \
     nginx \
     "php${PHP_VER}-fpm" \
@@ -113,7 +127,7 @@ apt-get install -y -qq \
     "php${PHP_VER}-curl" \
     "php${PHP_VER}-zip" \
     "php${PHP_VER}-intl" \
-    mysql-server \
+    "${DB_SERVER_PKG}" \
     composer \
     rsync
 
