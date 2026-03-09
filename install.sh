@@ -106,7 +106,8 @@ info "PHP target version: ${PHP_VER}"
 
 DB_SERVER_PKG=""
 for pkg in mysql-server default-mysql-server mariadb-server; do
-    if apt-cache show "$pkg" >/dev/null 2>&1; then
+    CANDIDATE="$(apt-cache policy "$pkg" 2>/dev/null | awk -F': ' '/Candidate:/ {print $2}')"
+    if [[ -n "$CANDIDATE" && "$CANDIDATE" != "(none)" ]]; then
         DB_SERVER_PKG="$pkg"
         break
     fi
