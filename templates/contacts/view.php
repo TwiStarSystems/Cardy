@@ -33,7 +33,7 @@ $initials = strtoupper(
   <div class="contact-detail-header">
     <div class="contact-detail-avatar">
       <?php if (!empty($c['photo'])): ?>
-        <img src="data:image/jpeg;base64,<?= $_ctrl->e($c['photo']) ?>" alt="">
+        <img src="data:<?= $_ctrl->e($c['photo_mime'] ?? 'image/jpeg') ?>;base64,<?= $_ctrl->e($c['photo']) ?>" alt="">
       <?php else: ?>
         <?= $_ctrl->e($initials) ?>
       <?php endif; ?>

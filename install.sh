@@ -88,6 +88,35 @@ reload_php_fpm() {
     fi
 }
 
+configure_php_upload_limits() {
+    local php_ver="$1"
+    if [[ -z "${php_ver}" ]]; then
+        warn "PHP version unknown; skipping PHP upload-limit configuration."
+        return
+    fi
+
+    local fpm_conf_dir="/etc/php/${php_ver}/fpm/conf.d"
+    local cli_conf_dir="/etc/php/${php_ver}/cli/conf.d"
+
+    mkdir -p "${fpm_conf_dir}" "${cli_conf_dir}"
+
+    cat > "${fpm_conf_dir}/99-cardy-uploads.ini" <<'PHPINI'
+file_uploads = On
+upload_max_filesize = 16M
+post_max_size = 20M
+max_file_uploads = 100
+PHPINI
+
+    cat > "${cli_conf_dir}/99-cardy-uploads.ini" <<'PHPINI'
+file_uploads = On
+upload_max_filesize = 16M
+post_max_size = 20M
+max_file_uploads = 100
+PHPINI
+
+    success "Configured PHP upload limits for php${php_ver}."
+}
+
 detect_php_version_from_services() {
     systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 2>/dev/null \
         | awk '{print $1}' \
@@ -201,6 +230,7 @@ if [[ "${MODE}" == "update" ]]; then
     rm -f /etc/nginx/sites-enabled/cardy-webui /etc/nginx/sites-available/cardy-webui
 
     nginx -t && systemctl reload nginx
+    configure_php_upload_limits "${PHP_VER}"
     reload_php_fpm
 
     success "Cardy updated successfully."
@@ -461,6 +491,9 @@ rm -f /etc/nginx/sites-enabled/cardy-dav /etc/nginx/sites-available/cardy-dav
 
 nginx -t && systemctl reload nginx
 success "Nginx configured."
+
+header "Configuring PHP upload limits"
+configure_php_upload_limits "${PHP_VER}"
 
 # -------- Set up document root symlinks ---------------------
 header "Setting up web roots"

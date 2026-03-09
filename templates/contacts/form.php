@@ -21,11 +21,30 @@ $c       = $contact ?? [];
 </div>
 
 <div class="card">
-<form method="POST" action="<?= $action ?>">
+<form method="POST" action="<?= $action ?>" enctype="multipart/form-data">
   <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
   <?php if ($isEdit): ?>
   <input type="hidden" name="uid" value="<?= $_ctrl->e($c['uid'] ?? '') ?>">
   <?php endif; ?>
+
+  <!-- Contact Picture -->
+  <div class="form-section-title">Contact Picture</div>
+  <?php if (!empty($c['photo'])): ?>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+    <div class="contact-avatar" style="width:64px;height:64px;">
+      <img src="data:<?= $_ctrl->e($c['photo_mime'] ?? 'image/jpeg') ?>;base64,<?= $_ctrl->e($c['photo']) ?>" alt="Current contact picture">
+    </div>
+    <label class="form-hint" style="display:flex;align-items:center;gap:8px;margin:0;">
+      <input type="checkbox" name="remove_photo" value="1">
+      Remove current picture
+    </label>
+  </div>
+  <?php endif; ?>
+  <div class="form-group">
+    <label class="form-label" for="photo_file">Upload Picture</label>
+    <input class="form-control" type="file" id="photo_file" name="photo_file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,image/jpeg,image/png,image/gif,image/webp,image/bmp">
+    <div class="form-hint">Supported formats: JPG, JPEG, PNG, GIF, WEBP, BMP (max 5MB).</div>
+  </div>
 
   <!-- Basic Info -->
   <div class="form-section-title">Basic Information</div>

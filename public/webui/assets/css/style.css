@@ -570,6 +570,15 @@ tbody td {
   gap: var(--spacing-md);
 }
 
+.contacts-section-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-sparkle-purple);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: var(--spacing-md) 0 var(--spacing-sm);
+}
+
 .contact-card {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--color-border);

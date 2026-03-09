@@ -90,7 +90,7 @@ class Contact
     // List / fetch
     // -------------------------------------------------------
 
-    public static function allForUser(string $username, string $search = ''): array
+    public static function allForUser(string $username, string $search = '', string $sort = 'default'): array
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
@@ -115,8 +115,76 @@ class Contact
                 'id'    => (int) ($row['local_id'] ?: $row['id']),
                 'db_id' => (int) $row['id'],
                 'uri'   => $row['uri'],
+                'lastmodified' => (int) $row['lastmodified'],
             ], $parsed);
         }
+
+        return self::sortContacts($contacts, $sort);
+    }
+
+    private static function sortContacts(array $contacts, string $sort): array
+    {
+        if ($sort === 'default') {
+            return $contacts;
+        }
+
+        usort($contacts, static function (array $a, array $b) use ($sort): int {
+            switch ($sort) {
+                case 'first_name':
+                    $cmp = strcasecmp(trim((string) ($a['first_name'] ?? '')), trim((string) ($b['first_name'] ?? '')));
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                    $cmp = strcasecmp(trim((string) ($a['last_name'] ?? '')), trim((string) ($b['last_name'] ?? '')));
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                    return strcasecmp(trim((string) ($a['fn'] ?? '')), trim((string) ($b['fn'] ?? '')));
+
+                case 'last_name':
+                    $cmp = strcasecmp(trim((string) ($a['last_name'] ?? '')), trim((string) ($b['last_name'] ?? '')));
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                    $cmp = strcasecmp(trim((string) ($a['first_name'] ?? '')), trim((string) ($b['first_name'] ?? '')));
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                    return strcasecmp(trim((string) ($a['fn'] ?? '')), trim((string) ($b['fn'] ?? '')));
+
+                case 'birthday':
+                    $aBirthday = trim((string) ($a['birthday'] ?? ''));
+                    $bBirthday = trim((string) ($b['birthday'] ?? ''));
+                    if ($aBirthday === '' && $bBirthday !== '') {
+                        return 1;
+                    }
+                    if ($aBirthday !== '' && $bBirthday === '') {
+                        return -1;
+                    }
+                    $cmp = strcasecmp($aBirthday, $bBirthday);
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                    return strcasecmp(trim((string) ($a['fn'] ?? '')), trim((string) ($b['fn'] ?? '')));
+
+                case 'organization':
+                    $cmp = strcasecmp(trim((string) ($a['org'] ?? '')), trim((string) ($b['org'] ?? '')));
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                    return strcasecmp(trim((string) ($a['fn'] ?? '')), trim((string) ($b['fn'] ?? '')));
+
+                case 'recently_updated':
+                    $cmp = ((int) ($b['lastmodified'] ?? 0)) <=> ((int) ($a['lastmodified'] ?? 0));
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                    return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+
+                default:
+                    return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+            }
+        });
 
         return $contacts;
     }
@@ -200,8 +268,22 @@ class Contact
         }
 
         $photo = '';
+        $photoMime = 'image/jpeg';
         if (isset($vcard->PHOTO)) {
-            $photo = base64_encode((string) $vcard->PHOTO);
+            $photoProperty = $vcard->PHOTO[0] ?? $vcard->PHOTO;
+            $rawPhoto = (string) $photoProperty;
+            $normalized = preg_replace('/\s+/', '', $rawPhoto) ?? '';
+
+            if ($normalized !== '' && base64_decode($normalized, true) !== false) {
+                $photo = $normalized;
+            } elseif ($rawPhoto !== '') {
+                $photo = base64_encode($rawPhoto);
+            }
+
+            $typeParam = strtoupper(trim((string) ($photoProperty['TYPE'] ?? '')));
+            if (in_array($typeParam, ['PNG', 'GIF', 'WEBP', 'BMP', 'JPEG', 'JPG'], true)) {
+                $photoMime = $typeParam === 'JPG' ? 'image/jpeg' : 'image/' . strtolower($typeParam);
+            }
         }
 
         $nameParts = ['', '', '', '', ''];
@@ -226,6 +308,7 @@ class Contact
             'birthday'    => isset($vcard->BDAY)  ? (string) $vcard->BDAY  : '',
             'note'        => isset($vcard->NOTE)  ? (string) $vcard->NOTE  : '',
             'photo'       => $photo,
+            'photo_mime'  => $photoMime,
             'uid'         => isset($vcard->UID)   ? (string) $vcard->UID   : '',
         ];
     }
@@ -236,7 +319,7 @@ class Contact
             'fn' => '', 'last_name' => '', 'first_name' => '', 'org' => '',
             'title' => '', 'email' => '', 'emails' => [], 'phone' => '',
             'phones' => [], 'addresses' => [], 'birthday' => '', 'note' => '',
-            'photo' => '', 'uid' => '',
+            'photo' => '', 'photo_mime' => 'image/jpeg', 'uid' => '',
         ];
     }
 
@@ -313,6 +396,8 @@ class Contact
         if (!empty($data['note'])) {
             $vcard->add('NOTE', $data['note']);
         }
+
+        self::applyPhotoManagedFields($vcard, $data);
 
         return $vcard->serialize();
     }
@@ -395,6 +480,35 @@ class Contact
         if (!empty($data['note'])) {
             $vcard->add('NOTE', $data['note']);
         }
+
+        self::applyPhotoManagedFields($vcard, $data);
+    }
+
+    private static function applyPhotoManagedFields(VCard $vcard, array $data): void
+    {
+        if (!empty($data['remove_photo'])) {
+            unset($vcard->PHOTO);
+        }
+
+        if (empty($data['photo_upload']) || !is_array($data['photo_upload'])) {
+            return;
+        }
+
+        $photoBinary = (string) ($data['photo_upload']['data'] ?? '');
+        if ($photoBinary === '') {
+            return;
+        }
+
+        $vcardType = strtoupper((string) ($data['photo_upload']['vcard_type'] ?? 'JPEG'));
+        if ($vcardType === 'JPG') {
+            $vcardType = 'JPEG';
+        }
+
+        unset($vcard->PHOTO);
+        $vcard->add('PHOTO', base64_encode($photoBinary), [
+            'ENCODING' => 'b',
+            'TYPE'     => $vcardType,
+        ]);
     }
 
     // -------------------------------------------------------

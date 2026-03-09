@@ -12,15 +12,41 @@ class ContactsController extends Controller
     {
         $user     = $this->requireAuth();
         $search   = trim($_GET['q'] ?? '');
-        $contacts = Contact::allForUser($user['username'], $search);
+        $sort     = trim((string) ($_GET['sort'] ?? 'default'));
+        $category = trim((string) ($_GET['category'] ?? 'all'));
+        $allowedSorts = ['default', 'first_name', 'last_name', 'birthday', 'organization', 'recently_updated'];
+        $allowedCategories = ['all', 'people', 'business'];
+        if (!in_array($sort, $allowedSorts, true)) {
+            $sort = 'default';
+        }
+        if (!in_array($category, $allowedCategories, true)) {
+            $category = 'all';
+        }
+
+        $contacts = Contact::allForUser($user['username'], $search, $sort);
+        if ($category !== 'all') {
+            $contacts = array_values(array_filter($contacts, function (array $contact) use ($category): bool {
+                $isBusiness = $this->isBusinessContact($contact);
+                return $category === 'business' ? $isBusiness : !$isBusiness;
+            }));
+        }
 
         $this->render('contacts/index', [
             'user'     => $user,
             'contacts' => $contacts,
             'search'   => $search,
+            'sort'     => $sort,
+            'category' => $category,
             'csrf'     => $this->csrfToken(),
             'flash'    => $this->getFlash(),
         ]);
+    }
+
+    private function isBusinessContact(array $contact): bool
+    {
+        $hasPersonName = trim((string) ($contact['first_name'] ?? '')) !== '' || trim((string) ($contact['last_name'] ?? '')) !== '';
+        $hasOrg = trim((string) ($contact['org'] ?? '')) !== '';
+        return !$hasPersonName && $hasOrg;
     }
 
     public function view(array $params): void
@@ -205,6 +231,7 @@ class ContactsController extends Controller
     private function extractFormData(): array
     {
         $post = $_POST;
+        $photoUpload = $this->extractPhotoUpload();
 
         $emails = [];
         $emailAddresses = $post['email'] ?? [];
@@ -272,7 +299,7 @@ class ContactsController extends Controller
             ];
         }
 
-        return [
+        $result = [
             'first_name'  => $post['first_name']  ?? '',
             'last_name'   => $post['last_name']   ?? '',
             'org'         => $post['org']         ?? '',
@@ -283,6 +310,89 @@ class ContactsController extends Controller
             'phones'      => $phones,
             'addresses'   => $addresses,
             'uid'         => $post['uid']         ?? '',
+        ];
+
+        if ($photoUpload !== null) {
+            $result['photo_upload'] = $photoUpload;
+        }
+
+        if (($post['remove_photo'] ?? '') === '1') {
+            $result['remove_photo'] = true;
+        }
+
+        return $result;
+    }
+
+    private function extractPhotoUpload(): ?array
+    {
+        $file = $_FILES['photo_file'] ?? null;
+        if (!$file) {
+            return null;
+        }
+
+        $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($error === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+        if ($error !== UPLOAD_ERR_OK) {
+            throw new \RuntimeException('Photo upload failed. Please try again.');
+        }
+
+        $tmpName = (string) ($file['tmp_name'] ?? '');
+        if ($tmpName === '') {
+            throw new \RuntimeException('Invalid uploaded photo.');
+        }
+
+        $size = (int) ($file['size'] ?? 0);
+        if ($size <= 0) {
+            throw new \RuntimeException('Uploaded photo is empty.');
+        }
+        if ($size > (5 * 1024 * 1024)) {
+            throw new \RuntimeException('Photo is too large. Maximum size is 5MB.');
+        }
+
+        $allowedMimes = [
+            'image/jpeg'   => 'JPEG',
+            'image/pjpeg'  => 'JPEG',
+            'image/png'    => 'PNG',
+            'image/gif'    => 'GIF',
+            'image/webp'   => 'WEBP',
+            'image/bmp'    => 'BMP',
+            'image/x-ms-bmp' => 'BMP',
+        ];
+
+        $mimeType = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo !== false) {
+                $detected = finfo_file($finfo, $tmpName);
+                if (is_string($detected)) {
+                    $mimeType = strtolower(trim($detected));
+                }
+                finfo_close($finfo);
+            }
+        }
+
+        if ($mimeType === '' && function_exists('getimagesize')) {
+            $imageMeta = @getimagesize($tmpName);
+            if (is_array($imageMeta) && !empty($imageMeta['mime'])) {
+                $mimeType = strtolower(trim((string) $imageMeta['mime']));
+            }
+        }
+
+        if (!isset($allowedMimes[$mimeType])) {
+            throw new \RuntimeException('Unsupported photo format. Allowed types: JPG, PNG, GIF, WEBP, BMP.');
+        }
+
+        $binary = (string) file_get_contents($tmpName);
+        if ($binary === '') {
+            throw new \RuntimeException('Failed to read uploaded photo content.');
+        }
+
+        return [
+            'data'       => $binary,
+            'mime'       => $mimeType,
+            'vcard_type' => $allowedMimes[$mimeType],
         ];
     }
 
