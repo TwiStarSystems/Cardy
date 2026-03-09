@@ -43,7 +43,7 @@ if [[ "$MODE" == "--update" ]]; then
     cd "${CARDY_DIR}" && sudo -u www-data composer install --no-dev --optimize-autoloader --no-interaction
 
     info "Reloading PHP-FPM..."
-    systemctl reload php8.2-fpm 2>/dev/null || systemctl reload php8.3-fpm 2>/dev/null || true
+    systemctl reload php8.4-fpm 2>/dev/null || systemctl reload php8.3-fpm 2>/dev/null || systemctl reload php8.2-fpm 2>/dev/null || systemctl reload php8.1-fpm 2>/dev/null || true
 
     success "Cardy updated successfully."
     exit 0
@@ -54,18 +54,8 @@ fi
 # ============================================================
 header "Cardy Installation"
 
-# -------- Detect PHP version --------------------------------
+# -------- Select PHP version --------------------------------
 PHP_VER=""
-for v in 8.3 8.2 8.1; do
-    if command -v "php${v}" &>/dev/null; then
-        PHP_VER="$v"
-        break
-    fi
-done
-if [[ -z "$PHP_VER" ]]; then
-    PHP_VER="8.2"   # will install this version
-fi
-info "PHP target version: ${PHP_VER}"
 
 # -------- Collect configuration -----------------------------
 echo ""
@@ -76,17 +66,23 @@ read -r -p "Database host [localhost]: "           DB_HOST;     DB_HOST="${DB_HO
 read -r -p "Database port [3306]: "               DB_PORT;     DB_PORT="${DB_PORT:-3306}"
 read -r -p "Database name [cardy]: "              DB_NAME;     DB_NAME="${DB_NAME:-cardy}"
 read -r -p "Database user [cardy]: "              DB_USER;     DB_USER="${DB_USER:-cardy}"
-read -r -s -p "Database password: "               DB_PASS;     echo ""
-read -r -p "Web UI base URL [http://localhost]: " WEBUI_URL; WEBUI_URL="${WEBUI_URL:-http://localhost}"
-read -r -p "DAV service URL  [http://localhost]: "    DAV_URL;   DAV_URL="${DAV_URL:-http://localhost}"
+read -r -s -p "Database password [auto-generate if blank]: " DB_PASS; echo ""
+read -r -p "Base URI [http://localhost]: "        BASE_URI;    BASE_URI="${BASE_URI:-http://localhost}"
+WEBUI_URL="${BASE_URI}"
+DAV_URL="${BASE_URI}"
 read -r -p "Admin username [admin]: "             ADMIN_USER;  ADMIN_USER="${ADMIN_USER:-admin}"
-read -r -s -p "Admin password (min 8 chars): "    ADMIN_PASS;  echo ""
+read -r -s -p "Admin password [admin]: "          ADMIN_PASS;  echo ""
+ADMIN_PASS="${ADMIN_PASS:-admin}"
 
+DB_PASS_GENERATED=0
 if [[ ${#DB_PASS} -lt 1 ]]; then
-    error "Database password cannot be empty."
+    DB_PASS="$(openssl rand -base64 48 | tr -d '=+/\n' | cut -c1-32)"
+    DB_PASS_GENERATED=1
+    warn "Database password not provided; generated a strong password automatically."
 fi
-if [[ ${#ADMIN_PASS} -lt 8 ]]; then
-    error "Admin password must be at least 8 characters."
+
+if [[ "${ADMIN_PASS}" == "admin" ]]; then
+    warn "Admin password is set to the default value 'admin'. Change it after installation."
 fi
 
 # -------- Install system packages ---------------------------
@@ -94,6 +90,19 @@ header "Installing system packages"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
+
+for v in 8.4 8.3 8.2 8.1; do
+    if apt-cache show "php${v}-fpm" >/dev/null 2>&1; then
+        PHP_VER="$v"
+        break
+    fi
+done
+
+if [[ -z "$PHP_VER" ]]; then
+    error "No supported PHP-FPM package found (checked php8.4/8.3/8.2/8.1)."
+fi
+
+info "PHP target version: ${PHP_VER}"
 
 apt-get install -y -qq \
     nginx \
@@ -212,7 +221,7 @@ header "Configuring Nginx"
 # Remove any default site that might conflict
 rm -f /etc/nginx/sites-enabled/default
 
-# Install Cardy vhost config
+# Install Cardy single unified vhost config
 cp "${CARDY_DIR}/config/nginx/cardy.conf"   /etc/nginx/sites-available/cardy
 
 # Patch PHP-FPM socket path for actual installed version
@@ -276,6 +285,9 @@ echo -e ""
 echo -e "  ${BOLD}Web UI${RESET}         ${GREEN}${WEBUI_URL}${RESET}"
 echo -e "  ${BOLD}CardDAV URL${RESET}    ${GREEN}${DAV_URL}/addressbooks/${ADMIN_USER}/default/${RESET}"
 echo -e "  ${BOLD}CalDAV URL${RESET}     ${GREEN}${DAV_URL}/calendars/${ADMIN_USER}/default/${RESET}"
+if [[ ${DB_PASS_GENERATED} -eq 1 ]]; then
+    echo -e "  ${BOLD}Generated DB password${RESET} ${YELLOW}${DB_PASS}${RESET}"
+fi
 echo -e ""
 echo -e "  ${BOLD}Admin user${RESET}     ${CYAN}${ADMIN_USER}${RESET}"
 echo -e ""

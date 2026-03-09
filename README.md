@@ -17,10 +17,20 @@ A self-hosted **CardDAV** and **CalDAV** server with a web-based management UI, 
 ## Requirements
 
 - Debian 11/12 or Ubuntu 22.04/24.04
-- PHP 8.1+ (8.2 recommended)
+- PHP 8.1+ (installer automatically selects the latest available supported PHP-FPM package)
 - MySQL 8.0+ / MariaDB 10.6+
 - Nginx
 - Composer
+
+---
+
+## How To Get Started
+
+```bash
+git clone https://github.com/TwiStarSystems/Cardy.git
+cd Cardy
+sudo bash install.sh
+```
 
 ---
 
@@ -30,12 +40,22 @@ A self-hosted **CardDAV** and **CalDAV** server with a web-based management UI, 
 sudo bash install.sh
 ```
 
+Installer prompt defaults:
+- Database host: `localhost`
+- Database port: `3306`
+- Database name: `cardy`
+- Database user: `cardy`
+- Database password: auto-generated if left blank
+- Base URI: `http://localhost` (used for both Web UI and DAV URLs)
+- Admin username: `admin`
+- Admin password: `admin`
+
 The installer will:
 1. Install Nginx, PHP-FPM, MySQL and Composer
 2. Create the `cardy` database and user
 3. Apply the database schema
 4. Copy application files and run `composer install`
-5. Configure Nginx virtual hosts
+5. Configure a single unified Nginx vhost
 6. Create an admin user
 
 After installation, visit `http://your-server` to log in.
