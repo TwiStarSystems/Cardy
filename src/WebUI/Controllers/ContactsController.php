@@ -77,14 +77,16 @@ class ContactsController extends Controller
             return;
         }
 
-        $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-        $isVCard = $extension === 'vcf' || stripos($content, 'BEGIN:VCARD') !== false;
+        $isVCard = $this->isVCardUpload($file, $content);
+        $isCsv = $this->isCsvUpload($file);
 
         try {
             if ($isVCard) {
                 $result = Contact::importVCardData($user['username'], $content);
-            } else {
+            } elseif ($isCsv) {
                 $result = $this->importCsvContacts($user['username'], $content);
+            } else {
+                throw new \RuntimeException('Unsupported file type. Please upload a CSV or vCard (.vcf) file.');
             }
 
             $message = 'Imported ' . $result['imported'] . ' contact(s).';
@@ -101,6 +103,34 @@ class ContactsController extends Controller
         }
 
         $this->redirect('/contacts');
+    }
+
+    private function isVCardUpload(array $file, string $content): bool
+    {
+        $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $mimeType = strtolower(trim((string) ($file['type'] ?? '')));
+
+        if (in_array($extension, ['vcf', 'vcard'], true)) {
+            return true;
+        }
+
+        if (in_array($mimeType, ['text/vcard', 'text/x-vcard', 'text/directory', 'application/vcard', 'application/x-vcard'], true)) {
+            return true;
+        }
+
+        return stripos($content, 'BEGIN:VCARD') !== false;
+    }
+
+    private function isCsvUpload(array $file): bool
+    {
+        $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $mimeType = strtolower(trim((string) ($file['type'] ?? '')));
+
+        if ($extension === 'csv') {
+            return true;
+        }
+
+        return in_array($mimeType, ['text/csv', 'application/csv', 'text/plain', 'application/vnd.ms-excel'], true);
     }
 
     public function store(): void

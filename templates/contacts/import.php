@@ -21,7 +21,7 @@ ob_start();
 
     <div class="form-group">
       <label class="form-label" for="import_file">CSV or vCard file</label>
-      <input class="form-control" type="file" id="import_file" name="import_file" required accept=".csv,.vcf,text/csv,text/vcard,text/x-vcard">
+      <input class="form-control" type="file" id="import_file" name="import_file" required accept=".csv,.vcf,.vcard,text/csv,text/vcard,text/x-vcard,text/directory,application/vcard,application/x-vcard">
       <div class="form-hint">Both single and bulk imports are supported. A .vcf file may contain one or many VCARD entries.</div>
     </div>
 
