@@ -1,0 +1,218 @@
+#!/usr/bin/env php
+<?php
+/**
+ * cardy-ctl — Cardy command-line management tool
+ *
+ * Usage:
+ *   cardy-ctl user:list
+ *   cardy-ctl user:add <username> [--admin]
+ *   cardy-ctl user:password <username>
+ *   cardy-ctl user:delete <username>
+ *   cardy-ctl db:migrate
+ */
+declare(strict_types=1);
+
+$appDir = realpath(__DIR__);
+if (!file_exists($appDir . '/vendor/autoload.php')) {
+    fwrite(STDERR, "Error: vendor/autoload.php not found. Run 'composer install' first.\n");
+    exit(1);
+}
+
+require $appDir . '/vendor/autoload.php';
+
+$configPath = $appDir . '/config/config.php';
+if (!file_exists($configPath)) {
+    fwrite(STDERR, "Error: config/config.php not found. Run install.sh first.\n");
+    exit(1);
+}
+
+\Cardy\Config::load($configPath);
+
+// -------------------------------------------------------
+// Helpers
+// -------------------------------------------------------
+function prompt(string $message, bool $hidden = false): string
+{
+    echo $message;
+    if ($hidden) {
+        system('stty -echo');
+    }
+    $input = trim((string) fgets(STDIN));
+    if ($hidden) {
+        system('stty echo');
+        echo "\n";
+    }
+    return $input;
+}
+
+function printTable(array $headers, array $rows): void
+{
+    $widths = array_map('strlen', $headers);
+    foreach ($rows as $row) {
+        foreach (array_values($row) as $i => $cell) {
+            $widths[$i] = max($widths[$i] ?? 0, strlen((string) $cell));
+        }
+    }
+    $line = '+' . implode('+', array_map(fn($w) => str_repeat('-', $w + 2), $widths)) . '+';
+    echo $line . "\n";
+    echo '| ' . implode(' | ', array_map(fn($h, $w) => str_pad($h, $w), $headers, $widths)) . " |\n";
+    echo $line . "\n";
+    foreach ($rows as $row) {
+        echo '| ' . implode(' | ', array_map(fn($c, $w) => str_pad((string) $c, $w), array_values($row), $widths)) . " |\n";
+    }
+    echo $line . "\n";
+}
+
+// -------------------------------------------------------
+// Commands
+// -------------------------------------------------------
+$args    = $argv;
+array_shift($args); // remove script name
+$command = array_shift($args) ?? 'help';
+
+switch ($command) {
+    // --------------------------------------------------
+    case 'user:list':
+        $users = \Cardy\Models\User::all();
+        if (empty($users)) {
+            echo "No users found.\n";
+            break;
+        }
+        printTable(
+            ['ID', 'Username', 'Display Name', 'Email', 'Admin', 'Created'],
+            array_map(fn($u) => [
+                $u['id'],
+                $u['username'],
+                $u['display_name'],
+                $u['email'],
+                $u['is_admin'] ? 'Yes' : 'No',
+                date('Y-m-d', strtotime($u['created_at'])),
+            ], $users)
+        );
+        echo count($users) . " user(s) total.\n";
+        break;
+
+    // --------------------------------------------------
+    case 'user:add':
+        $username = $args[0] ?? '';
+        $isAdmin  = in_array('--admin', $args, true);
+
+        if (empty($username)) {
+            $username = prompt('Username: ');
+        }
+        if (!preg_match('/^[a-zA-Z0-9_\-]+$/', $username)) {
+            fwrite(STDERR, "Error: Username may only contain letters, numbers, hyphens and underscores.\n");
+            exit(1);
+        }
+
+        $existing = \Cardy\Models\User::findByUsername($username);
+        if ($existing) {
+            fwrite(STDERR, "Error: User '{$username}' already exists.\n");
+            exit(1);
+        }
+
+        $password = prompt("Password for '{$username}': ", true);
+        if (strlen($password) < 8) {
+            fwrite(STDERR, "Error: Password must be at least 8 characters.\n");
+            exit(1);
+        }
+
+        $confirm  = prompt('Confirm password: ', true);
+        if ($password !== $confirm) {
+            fwrite(STDERR, "Error: Passwords do not match.\n");
+            exit(1);
+        }
+
+        $email       = prompt('Email (optional): ');
+        $displayName = prompt('Display name (optional): ');
+
+        \Cardy\Models\User::create($username, $password, $email, $displayName, $isAdmin);
+        echo "User '{$username}' created successfully" . ($isAdmin ? ' (admin)' : '') . ".\n";
+        break;
+
+    // --------------------------------------------------
+    case 'user:password':
+        $username = $args[0] ?? '';
+        if (empty($username)) {
+            $username = prompt('Username: ');
+        }
+
+        $user = \Cardy\Models\User::findByUsername($username);
+        if (!$user) {
+            fwrite(STDERR, "Error: User '{$username}' not found.\n");
+            exit(1);
+        }
+
+        $password = prompt("New password for '{$username}': ", true);
+        if (strlen($password) < 8) {
+            fwrite(STDERR, "Error: Password must be at least 8 characters.\n");
+            exit(1);
+        }
+
+        $confirm = prompt('Confirm password: ', true);
+        if ($password !== $confirm) {
+            fwrite(STDERR, "Error: Passwords do not match.\n");
+            exit(1);
+        }
+
+        \Cardy\Models\User::updatePassword((int) $user['id'], $password);
+        echo "Password for '{$username}' updated successfully.\n";
+        break;
+
+    // --------------------------------------------------
+    case 'user:delete':
+        $username = $args[0] ?? '';
+        if (empty($username)) {
+            $username = prompt('Username: ');
+        }
+
+        $user = \Cardy\Models\User::findByUsername($username);
+        if (!$user) {
+            fwrite(STDERR, "Error: User '{$username}' not found.\n");
+            exit(1);
+        }
+
+        $confirm = prompt("Type 'yes' to confirm deletion of user '{$username}' and ALL their data: ");
+        if ($confirm !== 'yes') {
+            echo "Aborted.\n";
+            break;
+        }
+
+        \Cardy\Models\User::delete((int) $user['id']);
+        echo "User '{$username}' deleted.\n";
+        break;
+
+    // --------------------------------------------------
+    case 'db:migrate':
+        $schemaPath = $appDir . '/sql/schema.sql';
+        if (!file_exists($schemaPath)) {
+            fwrite(STDERR, "Error: sql/schema.sql not found.\n");
+            exit(1);
+        }
+        $pdo = \Cardy\Database::getInstance();
+        $sql = file_get_contents($schemaPath);
+        // Split by semicolons, execute each statement
+        foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmt) {
+            if ($stmt) {
+                $pdo->exec($stmt);
+            }
+        }
+        echo "Database schema applied successfully.\n";
+        break;
+
+    // --------------------------------------------------
+    case 'help':
+    default:
+        echo <<<HELP
+cardy-ctl — Cardy management tool
+
+Commands:
+  user:list                   List all users
+  user:add <username> [--admin]  Create a new user (optionally as admin)
+  user:password <username>    Change a user's password
+  user:delete <username>      Delete a user and all their data
+  db:migrate                  Apply (or re-apply) the database schema
+
+HELP;
+        break;
+}

@@ -1,0 +1,25 @@
+<?php
+/**
+ * Cardy Configuration Example
+ * Copy this file to config/config.php and fill in your values.
+ */
+return [
+    'db' => [
+        'host' => 'localhost',
+        'port' => 3306,
+        'name' => 'cardy',
+        'user' => 'cardy',
+        'pass' => 'CHANGE_ME_DB_PASSWORD',
+    ],
+    'app' => [
+        // Base URL for the web UI (no trailing slash)
+        'webui_url'      => 'http://localhost:8321',
+        // Base URL for the DAV service (no trailing slash)
+        'dav_url'        => 'http://localhost',
+        // Random string used for session security — change this!
+        'session_secret' => 'CHANGE_ME_RANDOM_64_CHAR_STRING',
+        'timezone'       => 'UTC',
+        // Name shown in browser and DAV realm
+        'name'           => 'Cardy',
+    ],
+];
