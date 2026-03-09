@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Cardy Web UI — entry point
- * Served by Nginx on port 8321.
+ * Served by Nginx on port 80 (unified with DAV).
  */
 
 require __DIR__ . '/../../vendor/autoload.php';

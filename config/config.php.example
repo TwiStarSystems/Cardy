@@ -13,7 +13,7 @@ return [
     ],
     'app' => [
         // Base URL for the web UI (no trailing slash)
-        'webui_url'      => 'http://localhost:8321',
+        'webui_url'      => 'http://localhost',
         // Base URL for the DAV service (no trailing slash)
         'dav_url'        => 'http://localhost',
         // Random string used for session security — change this!

@@ -8,7 +8,7 @@ A self-hosted **CardDAV** and **CalDAV** server with a web-based management UI, 
 
 - **CardDAV** — sync contacts with any standard client (iOS, Android, Thunderbird, GNOME Contacts…)
 - **CalDAV** — sync calendars and events with any standard client
-- **Web UI** — manage contacts and calendar events through a browser on port **8321**
+- **Web UI** — manage contacts and calendar events through a browser on port **80**
 - **Multi-user** — each user gets their own address book and calendar; admin panel for user management
 - **SabreDAV** — industry-standard PHP DAV library for full protocol compliance
 
@@ -38,16 +38,15 @@ The installer will:
 5. Configure Nginx virtual hosts
 6. Create an admin user
 
-After installation, visit `http://your-server:8321` to log in.
+After installation, visit `http://your-server` to log in.
 
 ---
 
 ## Ports
 
-| Service      | Port | Notes                                    |
-|--------------|------|------------------------------------------|
-| Web UI       | 8321 | Designed to run behind a reverse proxy   |
-| CardDAV/CalDAV | 80 | Standard HTTP, used by DAV clients       |
+| Service          | Port | Notes                              |
+|------------------|------|------------------------------------|
+| Web UI + DAV     | 80   | Unified endpoint for both services |
 
 ---
 
@@ -93,8 +92,7 @@ sudo bash install.sh --update
 ├── config/
 │   ├── config.php.example     Example configuration (copy → config.php)
 │   └── nginx/
-│       ├── cardy-dav.conf     Nginx vhost for CardDAV/CalDAV (port 80)
-│       └── cardy-webui.conf   Nginx vhost for Web UI (port 8321)
+│       └── cardy.conf         Unified Nginx vhost for Web UI + DAV (port 80)
 ├── src/
 │   ├── Config.php
 │   ├── Database.php

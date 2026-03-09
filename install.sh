@@ -77,7 +77,7 @@ read -r -p "Database port [3306]: "               DB_PORT;     DB_PORT="${DB_POR
 read -r -p "Database name [cardy]: "              DB_NAME;     DB_NAME="${DB_NAME:-cardy}"
 read -r -p "Database user [cardy]: "              DB_USER;     DB_USER="${DB_USER:-cardy}"
 read -r -s -p "Database password: "               DB_PASS;     echo ""
-read -r -p "Web UI base URL [http://localhost:8321]: " WEBUI_URL; WEBUI_URL="${WEBUI_URL:-http://localhost:8321}"
+read -r -p "Web UI base URL [http://localhost]: " WEBUI_URL; WEBUI_URL="${WEBUI_URL:-http://localhost}"
 read -r -p "DAV service URL  [http://localhost]: "    DAV_URL;   DAV_URL="${DAV_URL:-http://localhost}"
 read -r -p "Admin username [admin]: "             ADMIN_USER;  ADMIN_USER="${ADMIN_USER:-admin}"
 read -r -s -p "Admin password (min 8 chars): "    ADMIN_PASS;  echo ""
@@ -212,18 +212,21 @@ header "Configuring Nginx"
 # Remove any default site that might conflict
 rm -f /etc/nginx/sites-enabled/default
 
-# Install Cardy vhost configs
-cp "${CARDY_DIR}/config/nginx/cardy-dav.conf"   /etc/nginx/sites-available/cardy-dav
-cp "${CARDY_DIR}/config/nginx/cardy-webui.conf" /etc/nginx/sites-available/cardy-webui
+# Install Cardy vhost config
+cp "${CARDY_DIR}/config/nginx/cardy.conf"   /etc/nginx/sites-available/cardy
 
 # Patch PHP-FPM socket path for actual installed version
 FPM_SOCK="/var/run/php/php${PHP_VER}-fpm.sock"
 sed -i "s|php8.2-fpm.sock|php${PHP_VER}-fpm.sock|g" \
-    /etc/nginx/sites-available/cardy-dav \
-    /etc/nginx/sites-available/cardy-webui
+    /etc/nginx/sites-available/cardy
 
-ln -sf /etc/nginx/sites-available/cardy-dav   /etc/nginx/sites-enabled/cardy-dav
-ln -sf /etc/nginx/sites-available/cardy-webui /etc/nginx/sites-enabled/cardy-webui
+ln -sf /etc/nginx/sites-available/cardy   /etc/nginx/sites-enabled/cardy
+
+# Remove legacy split-site config if it exists
+rm -f /etc/nginx/sites-enabled/cardy-webui /etc/nginx/sites-available/cardy-webui
+
+# Remove legacy DAV site config if it exists
+rm -f /etc/nginx/sites-enabled/cardy-dav /etc/nginx/sites-available/cardy-dav
 
 nginx -t && systemctl reload nginx
 success "Nginx configured."
@@ -235,11 +238,13 @@ header "Setting up web roots"
 ln -sfn "${CARDY_DIR}/public/dav"    "${CARDY_DIR}/dav"
 ln -sfn "${CARDY_DIR}/public/webui"  "${CARDY_DIR}/webui"
 
-# Update nginx roots to the correct paths
-sed -i "s|root /var/www/cardy/dav;|root ${CARDY_DIR}/public/dav;|" \
-    /etc/nginx/sites-available/cardy-dav
-sed -i "s|root /var/www/cardy/webui;|root ${CARDY_DIR}/public/webui;|" \
-    /etc/nginx/sites-available/cardy-webui
+# Update nginx root path to the installed location
+sed -i "s|root /var/www/cardy/public;|root ${CARDY_DIR}/public;|" \
+    /etc/nginx/sites-available/cardy
+
+# Update assets alias to the installed location
+sed -i "s|alias /var/www/cardy/public/webui/assets/;|alias ${CARDY_DIR}/public/webui/assets/;|" \
+    /etc/nginx/sites-available/cardy
 
 nginx -t && systemctl reload nginx
 
