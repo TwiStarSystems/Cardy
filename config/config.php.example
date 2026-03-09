@@ -18,6 +18,8 @@ return [
         'dav_url'        => 'http://localhost',
         // Random string used for session security — change this!
         'session_secret' => 'CHANGE_ME_RANDOM_64_CHAR_STRING',
+        // Trusted reverse proxy IPs/CIDRs. Use ['*'] only in controlled environments.
+        'trusted_proxies' => ['127.0.0.1', '::1'],
         'timezone'       => 'UTC',
         // Name shown in browser and DAV realm
         'name'           => 'Cardy',

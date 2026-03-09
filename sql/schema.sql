@@ -14,10 +14,14 @@ CREATE TABLE IF NOT EXISTS `users` (
     `email`         VARCHAR(255) DEFAULT '',
     `display_name`  VARCHAR(255) DEFAULT '',
     `is_admin`      TINYINT(1) DEFAULT 0,
+    `role`          VARCHAR(16) NOT NULL DEFAULT 'user',
     `created_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY `idx_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `role` VARCHAR(16) NOT NULL DEFAULT 'user' AFTER `is_admin`;
+UPDATE `users` SET `role` = CASE WHEN `is_admin` = 1 THEN 'admin' ELSE 'user' END WHERE `role` IS NULL OR `role` = '';
 
 -- -------------------------------------------------------
 -- SabreDAV: Principal tables
@@ -133,13 +137,17 @@ CREATE TABLE IF NOT EXISTS `addressbooks` (
 CREATE TABLE IF NOT EXISTS `cards` (
     `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     `addressbookid` INT UNSIGNED NOT NULL,
+    `local_id`      INT UNSIGNED NULL,
     `carddata`      MEDIUMBLOB,
     `uri`           VARBINARY(2048),
     `lastmodified`  INT UNSIGNED,
     `etag`          VARBINARY(32),
     `size`          INT UNSIGNED NOT NULL,
+    UNIQUE KEY `idx_addressbook_local_id` (`addressbookid`, `local_id`),
     FOREIGN KEY (`addressbookid`) REFERENCES `addressbooks` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE `cards` ADD COLUMN IF NOT EXISTS `local_id` INT UNSIGNED NULL AFTER `addressbookid`;
 
 CREATE TABLE IF NOT EXISTS `addressbookchanges` (
     `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

@@ -23,6 +23,8 @@ if (!file_exists($configPath)) {
 
 \Cardy\Config::load($configPath);
 
+\Cardy\Http\TrustedProxy::apply((array) \Cardy\Config::get('app.trusted_proxies', ['127.0.0.1', '::1']));
+
 $pdo = \Cardy\Database::getInstance();
 
 // -------------------------------------------------------

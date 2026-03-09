@@ -49,7 +49,7 @@ ob_start();
         <td><?= $_ctrl->e($u['display_name']) ?></td>
         <td><?= $_ctrl->e($u['email']) ?></td>
         <td>
-          <?php if ($u['is_admin']): ?>
+          <?php if (($u['role'] ?? '') === 'admin' || !empty($u['is_admin'])): ?>
           <span class="badge badge-gold">Admin</span>
           <?php else: ?>
           <span class="badge badge-muted">User</span>

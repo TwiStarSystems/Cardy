@@ -7,31 +7,65 @@ use Cardy\Database;
 
 class User
 {
+    private static bool $roleColumnChecked = false;
+
+    private static function ensureRoleColumn(): void
+    {
+        if (self::$roleColumnChecked) {
+            return;
+        }
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'role'");
+        $exists = $stmt && $stmt->fetch();
+
+        if (!$exists) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user' AFTER is_admin");
+            $pdo->exec("UPDATE users SET role = CASE WHEN is_admin = 1 THEN 'admin' ELSE 'user' END WHERE role IS NULL OR role = ''");
+        }
+
+        self::$roleColumnChecked = true;
+    }
+
+    private static function normalizeUserRow(array $row): array
+    {
+        if (empty($row['role'])) {
+            $row['role'] = !empty($row['is_admin']) ? 'admin' : 'user';
+        }
+        $row['is_admin'] = ($row['role'] === 'admin') ? 1 : 0;
+        return $row;
+    }
+
     // -------------------------------------------------------
     // Read helpers
     // -------------------------------------------------------
 
     public static function findById(int $id): ?array
     {
+        self::ensureRoleColumn();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, email, display_name, is_admin, created_at FROM users WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, created_at FROM users WHERE id = ?');
         $stmt->execute([$id]);
-        return $stmt->fetch() ?: null;
+        $row = $stmt->fetch() ?: null;
+        return $row ? self::normalizeUserRow($row) : null;
     }
 
     public static function findByUsername(string $username): ?array
     {
+        self::ensureRoleColumn();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, email, display_name, is_admin, created_at FROM users WHERE username = ?');
+        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, created_at FROM users WHERE username = ?');
         $stmt->execute([$username]);
-        return $stmt->fetch() ?: null;
+        $row = $stmt->fetch() ?: null;
+        return $row ? self::normalizeUserRow($row) : null;
     }
 
     public static function all(): array
     {
+        self::ensureRoleColumn();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->query('SELECT id, username, email, display_name, is_admin, created_at FROM users ORDER BY username');
-        return $stmt->fetchAll();
+        $stmt = $pdo->query('SELECT id, username, email, display_name, role, is_admin, created_at FROM users ORDER BY username');
+        return array_map([self::class, 'normalizeUserRow'], $stmt->fetchAll());
     }
 
     // -------------------------------------------------------
@@ -40,8 +74,9 @@ class User
 
     public static function authenticate(string $username, string $password): ?array
     {
+        self::ensureRoleColumn();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, password_hash, email, display_name, is_admin FROM users WHERE username = ?');
+        $stmt = $pdo->prepare('SELECT id, username, password_hash, email, display_name, role, is_admin FROM users WHERE username = ?');
         $stmt->execute([$username]);
         $row = $stmt->fetch();
 
@@ -50,7 +85,7 @@ class User
         }
 
         unset($row['password_hash']);
-        return $row;
+        return self::normalizeUserRow($row);
     }
 
     // -------------------------------------------------------
@@ -65,16 +100,19 @@ class User
         string $password,
         string $email = '',
         string $displayName = '',
-        bool   $isAdmin = false
+        string $role = 'user'
     ): int {
+        self::ensureRoleColumn();
         $pdo  = Database::getInstance();
+        $role = strtolower(trim($role)) === 'admin' ? 'admin' : 'user';
+        $isAdmin = $role === 'admin';
 
         // 1. Insert user
         $hash = password_hash($password, PASSWORD_BCRYPT);
         $stmt = $pdo->prepare(
-            'INSERT INTO users (username, password_hash, email, display_name, is_admin) VALUES (?, ?, ?, ?, ?)'
+            'INSERT INTO users (username, password_hash, email, display_name, is_admin, role) VALUES (?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$username, $hash, $email, $displayName ?: $username, $isAdmin ? 1 : 0]);
+        $stmt->execute([$username, $hash, $email, $displayName ?: $username, $isAdmin ? 1 : 0, $role]);
         $userId = (int) $pdo->lastInsertId();
 
         // 2. Create SabreDAV principal
@@ -112,16 +150,20 @@ class User
         int    $id,
         string $email,
         string $displayName,
-        bool   $isAdmin
+        string $role
     ): void {
+        self::ensureRoleColumn();
         $pdo  = Database::getInstance();
         $user = self::findById($id);
         if (!$user) {
             return;
         }
 
-        $pdo->prepare('UPDATE users SET email = ?, display_name = ?, is_admin = ? WHERE id = ?')
-            ->execute([$email, $displayName, $isAdmin ? 1 : 0, $id]);
+        $role = strtolower(trim($role)) === 'admin' ? 'admin' : 'user';
+        $isAdmin = $role === 'admin';
+
+        $pdo->prepare('UPDATE users SET email = ?, display_name = ?, is_admin = ?, role = ? WHERE id = ?')
+            ->execute([$email, $displayName, $isAdmin ? 1 : 0, $role, $id]);
 
         // Sync principal
         $principalUri = "principals/{$user['username']}";

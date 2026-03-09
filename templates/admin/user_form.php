@@ -79,11 +79,12 @@ $post    = $post ?? [];
   </div>
 
   <div class="form-group">
-    <label class="form-check">
-      <input type="checkbox" name="is_admin" value="1"
-             <?= ($isEdit ? $u['is_admin'] : !empty($post['is_admin'])) ? 'checked' : '' ?>>
-      <span>Administrator — can manage all users</span>
-    </label>
+    <label class="form-label" for="role">Role</label>
+    <?php $selectedRole = $isEdit ? ($u['role'] ?? (!empty($u['is_admin']) ? 'admin' : 'user')) : ($post['role'] ?? 'user'); ?>
+    <select class="form-control" id="role" name="role">
+      <option value="user" <?= $selectedRole === 'user' ? 'selected' : '' ?>>User — manage own data only</option>
+      <option value="admin" <?= $selectedRole === 'admin' ? 'selected' : '' ?>>Admin — manage users and server settings</option>
+    </select>
   </div>
 
   <div class="form-actions">

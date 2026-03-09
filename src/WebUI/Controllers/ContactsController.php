@@ -48,6 +48,61 @@ class ContactsController extends Controller
         ]);
     }
 
+    public function importForm(): void
+    {
+        $user = $this->requireAuth();
+        $this->render('contacts/import', [
+            'user' => $user,
+            'csrf' => $this->csrfToken(),
+            'flash' => $this->getFlash(),
+        ]);
+    }
+
+    public function import(): void
+    {
+        $user = $this->requireAuth();
+        $this->verifyCsrf();
+
+        $file = $_FILES['import_file'] ?? null;
+        if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $this->flash('error', 'Please upload a valid CSV or vCard file.');
+            $this->redirect('/contacts/import');
+            return;
+        }
+
+        $content = (string) file_get_contents((string) $file['tmp_name']);
+        if (trim($content) === '') {
+            $this->flash('error', 'Uploaded file is empty.');
+            $this->redirect('/contacts/import');
+            return;
+        }
+
+        $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $isVCard = $extension === 'vcf' || stripos($content, 'BEGIN:VCARD') !== false;
+
+        try {
+            if ($isVCard) {
+                $result = Contact::importVCardData($user['username'], $content);
+            } else {
+                $result = $this->importCsvContacts($user['username'], $content);
+            }
+
+            $message = 'Imported ' . $result['imported'] . ' contact(s).';
+            if (($result['failed'] ?? 0) > 0) {
+                $message .= ' Failed: ' . $result['failed'] . '.';
+                if (!empty($result['errors'])) {
+                    $message .= ' ' . implode(' | ', array_slice($result['errors'], 0, 2));
+                }
+            }
+
+            $this->flash(($result['failed'] ?? 0) > 0 ? 'error' : 'success', $message);
+        } catch (\Throwable $e) {
+            $this->flash('error', 'Import failed: ' . $e->getMessage());
+        }
+
+        $this->redirect('/contacts');
+    }
+
     public function store(): void
     {
         $user = $this->requireAuth();
@@ -122,23 +177,47 @@ class ContactsController extends Controller
         $post = $_POST;
 
         $emails = [];
-        foreach (['email1', 'email2', 'email3'] as $i => $key) {
-            if (!empty($post[$key])) {
+        $emailAddresses = $post['email'] ?? [];
+        $emailTypes = $post['email_type'] ?? [];
+        if (!is_array($emailAddresses)) {
+            $emailAddresses = [$emailAddresses];
+        }
+        if (!is_array($emailTypes)) {
+            $emailTypes = [$emailTypes];
+        }
+        foreach ($emailAddresses as $index => $address) {
+            $address = trim((string) $address);
+            if ($address !== '') {
                 $emails[] = [
-                    'address' => $post[$key],
-                    'type'    => $post["email{$i}_type"] ?? 'internet',
+                    'address' => $address,
+                    'type'    => trim((string) ($emailTypes[$index] ?? 'internet')) ?: 'internet',
                 ];
             }
         }
+        if (count($emails) > 100) {
+            throw new \RuntimeException('A maximum of 100 email addresses is allowed per contact.');
+        }
 
         $phones = [];
-        foreach (['phone1', 'phone2', 'phone3'] as $i => $key) {
-            if (!empty($post[$key])) {
+        $phoneNumbers = $post['phone'] ?? [];
+        $phoneTypes = $post['phone_type'] ?? [];
+        if (!is_array($phoneNumbers)) {
+            $phoneNumbers = [$phoneNumbers];
+        }
+        if (!is_array($phoneTypes)) {
+            $phoneTypes = [$phoneTypes];
+        }
+        foreach ($phoneNumbers as $index => $number) {
+            $number = trim((string) $number);
+            if ($number !== '') {
                 $phones[] = [
-                    'number' => $post[$key],
-                    'type'   => $post["phone{$i}_type"] ?? 'voice',
+                    'number' => $number,
+                    'type'   => trim((string) ($phoneTypes[$index] ?? 'voice')) ?: 'voice',
                 ];
             }
+        }
+        if (count($phones) > 100) {
+            throw new \RuntimeException('A maximum of 100 phone numbers is allowed per contact.');
         }
 
         $addresses = [];
@@ -174,6 +253,134 @@ class ContactsController extends Controller
             'phones'      => $phones,
             'addresses'   => $addresses,
             'uid'         => $post['uid']         ?? '',
+        ];
+    }
+
+    private function importCsvContacts(string $username, string $csvContent): array
+    {
+        $stream = fopen('php://temp', 'r+');
+        fwrite($stream, $csvContent);
+        rewind($stream);
+
+        $headers = fgetcsv($stream);
+        if (!$headers) {
+            throw new \RuntimeException('CSV file must include a header row.');
+        }
+
+        $headers = array_map(fn($h) => strtolower(trim((string) $h)), $headers);
+
+        $imported = 0;
+        $failed = 0;
+        $errors = [];
+        $rowNumber = 1;
+
+        while (($row = fgetcsv($stream)) !== false) {
+            $rowNumber++;
+            if (count(array_filter($row, fn($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
+
+            $assoc = [];
+            foreach ($headers as $index => $name) {
+                if ($name === '') {
+                    continue;
+                }
+                $assoc[$name] = trim((string) ($row[$index] ?? ''));
+            }
+
+            try {
+                $data = $this->mapCsvRowToContact($assoc);
+                Contact::create($username, $data);
+                $imported++;
+            } catch (\Throwable $e) {
+                $failed++;
+                $errors[] = 'CSV row ' . $rowNumber . ': ' . $e->getMessage();
+            }
+        }
+
+        fclose($stream);
+
+        return [
+            'imported' => $imported,
+            'failed'   => $failed,
+            'errors'   => $errors,
+        ];
+    }
+
+    private function mapCsvRowToContact(array $row): array
+    {
+        $firstName = $row['first_name'] ?? $row['given_name'] ?? '';
+        $lastName = $row['last_name'] ?? $row['family_name'] ?? '';
+        $fn = $row['fn'] ?? $row['full_name'] ?? '';
+
+        if ($firstName === '' && $lastName === '' && $fn !== '') {
+            $parts = preg_split('/\s+/', trim($fn), 2);
+            $firstName = $parts[0] ?? '';
+            $lastName = $parts[1] ?? '';
+        }
+
+        $emails = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $email = $row['email' . $i] ?? ($i === 1 ? ($row['email'] ?? '') : '');
+            if ($email !== '') {
+                $emails[] = [
+                    'address' => $email,
+                    'type' => $row['email' . $i . '_type'] ?? 'internet',
+                ];
+            }
+        }
+
+        $phones = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $phone = $row['phone' . $i] ?? ($i === 1 ? ($row['phone'] ?? '') : '');
+            if ($phone !== '') {
+                $phones[] = [
+                    'number' => $phone,
+                    'type' => $row['phone' . $i . '_type'] ?? 'voice',
+                ];
+            }
+        }
+
+        $addresses = [];
+        $home = [
+            'street'   => $row['home_street'] ?? '',
+            'city'     => $row['home_city'] ?? '',
+            'region'   => $row['home_region'] ?? '',
+            'postcode' => $row['home_postcode'] ?? '',
+            'country'  => $row['home_country'] ?? '',
+        ];
+        if (implode('', $home) !== '') {
+            $home['type'] = 'home';
+            $addresses[] = $home;
+        }
+
+        $work = [
+            'street'   => $row['work_street'] ?? '',
+            'city'     => $row['work_city'] ?? '',
+            'region'   => $row['work_region'] ?? '',
+            'postcode' => $row['work_postcode'] ?? '',
+            'country'  => $row['work_country'] ?? '',
+        ];
+        if (implode('', $work) !== '') {
+            $work['type'] = 'work';
+            $addresses[] = $work;
+        }
+
+        if ($firstName === '' && $lastName === '' && empty($emails) && empty($phones) && ($row['org'] ?? '') === '') {
+            throw new \RuntimeException('Contact row has no usable fields.');
+        }
+
+        return [
+            'first_name' => $firstName,
+            'last_name'  => $lastName,
+            'org'        => $row['org'] ?? '',
+            'title'      => $row['title'] ?? '',
+            'birthday'   => $row['birthday'] ?? '',
+            'note'       => $row['note'] ?? '',
+            'emails'     => $emails,
+            'phones'     => $phones,
+            'addresses'  => $addresses,
+            'uid'        => '',
         ];
     }
 }

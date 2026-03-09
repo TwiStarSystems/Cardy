@@ -61,10 +61,18 @@ class Controller
     protected function requireAdmin(): array
     {
         $user = $this->requireAuth();
-        if (empty($user['is_admin'])) {
+        if (!$this->isAdmin($user)) {
             $this->abort(403, 'Access denied. Administrator privileges required.');
         }
         return $user;
+    }
+
+    protected function isAdmin(array $user): bool
+    {
+        if (!empty($user['role'])) {
+            return $user['role'] === 'admin';
+        }
+        return !empty($user['is_admin']);
     }
 
     // -------------------------------------------------------

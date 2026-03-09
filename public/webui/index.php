@@ -17,11 +17,14 @@ if (!file_exists($configPath)) {
 
 \Cardy\Config::load($configPath);
 
+\Cardy\Http\TrustedProxy::apply((array) \Cardy\Config::get('app.trusted_proxies', ['127.0.0.1', '::1']));
+
 // Start session
 $appName = \Cardy\Config::get('app.name', 'Cardy');
 session_name('cardy_session');
 ini_set('session.cookie_httponly', '1');
 ini_set('session.cookie_samesite', 'Lax');
+ini_set('session.cookie_secure', (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? '1' : '0');
 session_start();
 
 // -------------------------------------------------------
@@ -50,6 +53,7 @@ $routes = [
         '/logout'                         => [AuthController::class,    'logout'],
         '/dashboard'                      => [DashboardController::class, 'index'],
         '/contacts'                       => [ContactsController::class, 'index'],
+        '/contacts/import'                => [ContactsController::class, 'importForm'],
         '/contacts/new'                   => [ContactsController::class, 'create'],
         '/contacts/{id}'                  => [ContactsController::class, 'view'],
         '/contacts/{id}/edit'             => [ContactsController::class, 'edit'],
@@ -59,10 +63,12 @@ $routes = [
         '/admin/users'                    => [AdminController::class,   'users'],
         '/admin/users/new'                => [AdminController::class,   'createUser'],
         '/admin/users/{id}/edit'          => [AdminController::class,   'editUser'],
+        '/admin/server'                   => [AdminController::class,   'serverSettings'],
     ],
     'POST' => [
         '/login'                          => [AuthController::class,    'processLogin'],
         '/contacts'                       => [ContactsController::class, 'store'],
+        '/contacts/import'                => [ContactsController::class, 'import'],
         '/contacts/{id}'                  => [ContactsController::class, 'update'],
         '/contacts/{id}/delete'           => [ContactsController::class, 'delete'],
         '/calendar'                       => [CalendarController::class, 'store'],
@@ -71,6 +77,7 @@ $routes = [
         '/admin/users'                    => [AdminController::class,   'storeUser'],
         '/admin/users/{id}'               => [AdminController::class,   'updateUser'],
         '/admin/users/{id}/delete'        => [AdminController::class,   'deleteUser'],
+        '/admin/server'                   => [AdminController::class,   'updateServerSettings'],
     ],
 ];
 

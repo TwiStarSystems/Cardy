@@ -8,12 +8,15 @@ ob_start();
     <h1 class="page-title">Contacts</h1>
     <p class="page-subtitle"><?= count($contacts) ?> contact<?= count($contacts) !== 1 ? 's' : '' ?><?= $search ? ' matching "' . $_ctrl->e($search) . '"' : '' ?></p>
   </div>
-  <a href="/contacts/new" class="btn btn-primary">
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-    </svg>
-    New Contact
-  </a>
+  <div class="flex gap-sm">
+    <a href="/contacts/import" class="btn btn-secondary">Import</a>
+    <a href="/contacts/new" class="btn btn-primary">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+      </svg>
+      New Contact
+    </a>
+  </div>
 </div>
 
 <?php if (!empty($flash)): ?>
@@ -62,7 +65,7 @@ ob_start();
       <?php endif; ?>
     </div>
     <div class="contact-info">
-      <div class="contact-name"><?= $_ctrl->e($c['fn'] ?: $c['org'] ?: 'Unknown') ?></div>
+      <div class="contact-name"><?= $_ctrl->e($c['fn'] ?: $c['org'] ?: 'Unknown') ?> <span class="text-muted" style="font-size:var(--text-xs)">#<?= (int) $c['id'] ?></span></div>
       <?php if ($c['org']): ?>
       <div class="contact-detail"><?= $_ctrl->e($c['org']) ?></div>
       <?php endif; ?>

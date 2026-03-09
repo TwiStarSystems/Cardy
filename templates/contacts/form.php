@@ -8,7 +8,7 @@ $c       = $contact ?? [];
 
 <div class="page-header">
   <div>
-    <h1 class="page-title"><?= $isEdit ? 'Edit Contact' : 'New Contact' ?></h1>
+    <h1 class="page-title"><?= $isEdit ? 'Edit Contact' : 'New Contact' ?><?php if ($isEdit): ?> <span class="text-muted" style="font-size:var(--text-sm)">#<?= (int) ($c['id'] ?? 0) ?></span><?php endif; ?></h1>
     <?php if ($isEdit): ?>
     <p class="page-subtitle"><?= $_ctrl->e($c['fn'] ?? '') ?></p>
     <?php endif; ?>
@@ -56,53 +56,61 @@ $c       = $contact ?? [];
 
   <!-- Email -->
   <div class="form-section-title">Email Addresses</div>
-  <?php
-  $emails = $c['emails'] ?? [];
-  while (count($emails) < 3) { $emails[] = ['address' => '', 'type' => 'internet']; }
-  ?>
-  <?php foreach ([1, 2, 3] as $i): ?>
-  <?php $e = $emails[$i - 1]; ?>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label" for="email<?= $i ?>">Email <?= $i ?></label>
-      <input class="form-control" type="email" id="email<?= $i ?>" name="email<?= $i ?>"
-             value="<?= $_ctrl->e($e['address'] ?? '') ?>" placeholder="email@example.com">
+  <?php $emails = $c['emails'] ?? [['address' => '', 'type' => 'internet']]; ?>
+  <div class="form-hint" id="email-counter">0/100 emails</div>
+  <div id="email-list">
+    <?php foreach ($emails as $index => $e): ?>
+    <div class="form-row email-row">
+      <div class="form-group">
+        <label class="form-label" for="email_<?= (int) $index ?>">Email</label>
+        <input class="form-control" type="email" id="email_<?= (int) $index ?>" name="email[]"
+               value="<?= $_ctrl->e($e['address'] ?? '') ?>" placeholder="email@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="email_type_<?= (int) $index ?>">Type</label>
+        <select class="form-control" id="email_type_<?= (int) $index ?>" name="email_type[]">
+          <?php foreach (['internet', 'work', 'home', 'other'] as $t): ?>
+          <option value="<?= $t ?>" <?= ($e['type'] ?? 'internet') === $t ? 'selected' : '' ?>><?= ucfirst($t) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="form-group" style="max-width:140px;align-self:flex-end;">
+        <button type="button" class="btn btn-ghost remove-email">Remove</button>
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label" for="email<?= $i - 1 ?>_type">Type</label>
-      <select class="form-control" id="email<?= $i - 1 ?>_type" name="email<?= $i - 1 ?>_type">
-        <?php foreach (['internet', 'work', 'home', 'other'] as $t): ?>
-        <option value="<?= $t ?>" <?= ($e['type'] ?? '') === $t ? 'selected' : '' ?>><?= ucfirst($t) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
+    <?php endforeach; ?>
   </div>
-  <?php endforeach; ?>
+  <button type="button" id="add-email" class="btn btn-secondary btn-sm">Add Email</button>
+  <div class="form-hint">Up to 100 email addresses.</div>
 
   <!-- Phone -->
   <div class="form-section-title">Phone Numbers</div>
-  <?php
-  $phones = $c['phones'] ?? [];
-  while (count($phones) < 3) { $phones[] = ['number' => '', 'type' => 'voice']; }
-  ?>
-  <?php foreach ([1, 2, 3] as $i): ?>
-  <?php $p = $phones[$i - 1]; ?>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label" for="phone<?= $i ?>">Phone <?= $i ?></label>
-      <input class="form-control" type="tel" id="phone<?= $i ?>" name="phone<?= $i ?>"
-             value="<?= $_ctrl->e($p['number'] ?? '') ?>" placeholder="+1 555 000 0000">
+  <?php $phones = $c['phones'] ?? [['number' => '', 'type' => 'voice']]; ?>
+  <div class="form-hint" id="phone-counter">0/100 phone numbers</div>
+  <div id="phone-list">
+    <?php foreach ($phones as $index => $p): ?>
+    <div class="form-row phone-row">
+      <div class="form-group">
+        <label class="form-label" for="phone_<?= (int) $index ?>">Phone</label>
+        <input class="form-control" type="tel" id="phone_<?= (int) $index ?>" name="phone[]"
+               value="<?= $_ctrl->e($p['number'] ?? '') ?>" placeholder="+1 555 000 0000">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="phone_type_<?= (int) $index ?>">Type</label>
+        <select class="form-control" id="phone_type_<?= (int) $index ?>" name="phone_type[]">
+          <?php foreach (['voice', 'cell', 'work', 'home', 'fax', 'other'] as $t): ?>
+          <option value="<?= $t ?>" <?= ($p['type'] ?? 'voice') === $t ? 'selected' : '' ?>><?= ucfirst($t) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="form-group" style="max-width:140px;align-self:flex-end;">
+        <button type="button" class="btn btn-ghost remove-phone">Remove</button>
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label" for="phone<?= $i - 1 ?>_type">Type</label>
-      <select class="form-control" id="phone<?= $i - 1 ?>_type" name="phone<?= $i - 1 ?>_type">
-        <?php foreach (['voice', 'cell', 'work', 'home', 'fax', 'other'] as $t): ?>
-        <option value="<?= $t ?>" <?= ($p['type'] ?? '') === $t ? 'selected' : '' ?>><?= ucfirst($t) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
+    <?php endforeach; ?>
   </div>
-  <?php endforeach; ?>
+  <button type="button" id="add-phone" class="btn btn-secondary btn-sm">Add Phone</button>
+  <div class="form-hint">Up to 100 phone numbers.</div>
 
   <!-- Address -->
   <div class="form-section-title">Home Address</div>
@@ -200,6 +208,104 @@ $c       = $contact ?? [];
   </div>
 </form>
 </div>
+
+<template id="email-row-template">
+  <div class="form-row email-row">
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input class="form-control" type="email" name="email[]" placeholder="email@example.com">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-control" name="email_type[]">
+        <option value="internet">Internet</option>
+        <option value="work">Work</option>
+        <option value="home">Home</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group" style="max-width:140px;align-self:flex-end;">
+      <button type="button" class="btn btn-ghost remove-email">Remove</button>
+    </div>
+  </div>
+</template>
+
+<template id="phone-row-template">
+  <div class="form-row phone-row">
+    <div class="form-group">
+      <label class="form-label">Phone</label>
+      <input class="form-control" type="tel" name="phone[]" placeholder="+1 555 000 0000">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-control" name="phone_type[]">
+        <option value="voice">Voice</option>
+        <option value="cell">Cell</option>
+        <option value="work">Work</option>
+        <option value="home">Home</option>
+        <option value="fax">Fax</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group" style="max-width:140px;align-self:flex-end;">
+      <button type="button" class="btn btn-ghost remove-phone">Remove</button>
+    </div>
+  </div>
+</template>
+
+<script>
+(() => {
+  const MAX_ENTRIES = 100;
+
+  const emailList = document.getElementById('email-list');
+  const phoneList = document.getElementById('phone-list');
+  const addEmailBtn = document.getElementById('add-email');
+  const addPhoneBtn = document.getElementById('add-phone');
+  const emailCounter = document.getElementById('email-counter');
+  const phoneCounter = document.getElementById('phone-counter');
+  const emailTpl = document.getElementById('email-row-template');
+  const phoneTpl = document.getElementById('phone-row-template');
+
+  const updateButtonState = () => {
+    const emailCount = emailList.querySelectorAll('.email-row').length;
+    const phoneCount = phoneList.querySelectorAll('.phone-row').length;
+    addEmailBtn.disabled = emailCount >= MAX_ENTRIES;
+    addPhoneBtn.disabled = phoneCount >= MAX_ENTRIES;
+    emailCounter.textContent = `${emailCount}/100 emails`;
+    phoneCounter.textContent = `${phoneCount}/100 phone numbers`;
+  };
+
+  addEmailBtn.addEventListener('click', () => {
+    if (emailList.querySelectorAll('.email-row').length >= MAX_ENTRIES) return;
+    emailList.appendChild(emailTpl.content.firstElementChild.cloneNode(true));
+    updateButtonState();
+  });
+
+  addPhoneBtn.addEventListener('click', () => {
+    if (phoneList.querySelectorAll('.phone-row').length >= MAX_ENTRIES) return;
+    phoneList.appendChild(phoneTpl.content.firstElementChild.cloneNode(true));
+    updateButtonState();
+  });
+
+  emailList.addEventListener('click', (event) => {
+    if (!event.target.classList.contains('remove-email')) return;
+    const rows = emailList.querySelectorAll('.email-row');
+    if (rows.length <= 1) return;
+    event.target.closest('.email-row')?.remove();
+    updateButtonState();
+  });
+
+  phoneList.addEventListener('click', (event) => {
+    if (!event.target.classList.contains('remove-phone')) return;
+    const rows = phoneList.querySelectorAll('.phone-row');
+    if (rows.length <= 1) return;
+    event.target.closest('.phone-row')?.remove();
+    updateButtonState();
+  });
+
+  updateButtonState();
+})();
+</script>
 
 <?php
 $content   = ob_get_clean();

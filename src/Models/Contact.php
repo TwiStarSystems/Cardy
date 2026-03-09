@@ -13,6 +13,64 @@ use Sabre\VObject\Reader;
  */
 class Contact
 {
+    private static bool $localIdChecked = false;
+
+    private static function ensureLocalIdColumn(): void
+    {
+        if (self::$localIdChecked) {
+            return;
+        }
+
+        $pdo = Database::getInstance();
+
+        $columnExists = false;
+        $col = $pdo->query("SHOW COLUMNS FROM cards LIKE 'local_id'");
+        if ($col && $col->fetch()) {
+            $columnExists = true;
+        }
+
+        if (!$columnExists) {
+            $pdo->exec('ALTER TABLE cards ADD COLUMN local_id INT UNSIGNED NULL AFTER addressbookid');
+        }
+
+        $indexExists = false;
+        $idx = $pdo->query("SHOW INDEX FROM cards WHERE Key_name = 'idx_addressbook_local_id'");
+        if ($idx && $idx->fetch()) {
+            $indexExists = true;
+        }
+
+        if (!$indexExists) {
+            $pdo->exec('CREATE UNIQUE INDEX idx_addressbook_local_id ON cards (addressbookid, local_id)');
+        }
+
+        $stmt = $pdo->query('SELECT id, addressbookid FROM cards WHERE local_id IS NULL ORDER BY addressbookid, id');
+        foreach ($stmt->fetchAll() as $row) {
+            $next = self::nextFreeLocalId((int) $row['addressbookid']);
+            $pdo->prepare('UPDATE cards SET local_id = ? WHERE id = ?')->execute([$next, (int) $row['id']]);
+        }
+
+        self::$localIdChecked = true;
+    }
+
+    private static function nextFreeLocalId(int $addressBookId): int
+    {
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT local_id FROM cards WHERE addressbookid = ? AND local_id IS NOT NULL ORDER BY local_id ASC');
+        $stmt->execute([$addressBookId]);
+
+        $expected = 1;
+        foreach ($stmt->fetchAll() as $row) {
+            $current = (int) $row['local_id'];
+            if ($current > $expected) {
+                break;
+            }
+            if ($current === $expected) {
+                $expected++;
+            }
+        }
+
+        return $expected;
+    }
     // -------------------------------------------------------
     // Address-book helpers
     // -------------------------------------------------------
@@ -34,6 +92,7 @@ class Contact
 
     public static function allForUser(string $username, string $search = ''): array
     {
+        self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
         $abId = self::getAddressBookId($username);
         if (!$abId) {
@@ -41,7 +100,7 @@ class Contact
         }
 
         $stmt = $pdo->prepare(
-            'SELECT id, uri, carddata, lastmodified FROM cards WHERE addressbookid = ? ORDER BY lastmodified DESC'
+            'SELECT id, local_id, uri, carddata, lastmodified FROM cards WHERE addressbookid = ? ORDER BY local_id ASC, lastmodified DESC'
         );
         $stmt->execute([$abId]);
         $rows = $stmt->fetchAll();
@@ -52,7 +111,11 @@ class Contact
             if ($search && stripos($parsed['fn'] . ' ' . $parsed['email'] . ' ' . $parsed['org'], $search) === false) {
                 continue;
             }
-            $contacts[] = array_merge(['id' => $row['id'], 'uri' => $row['uri']], $parsed);
+            $contacts[] = array_merge([
+                'id'    => (int) ($row['local_id'] ?: $row['id']),
+                'db_id' => (int) $row['id'],
+                'uri'   => $row['uri'],
+            ], $parsed);
         }
 
         return $contacts;
@@ -60,20 +123,27 @@ class Contact
 
     public static function findById(int $id, string $username): ?array
     {
+        self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
         $abId = self::getAddressBookId($username);
         if (!$abId) {
             return null;
         }
 
-        $stmt = $pdo->prepare('SELECT * FROM cards WHERE id = ? AND addressbookid = ?');
-        $stmt->execute([$id, $abId]);
+        $stmt = $pdo->prepare(
+            'SELECT * FROM cards WHERE addressbookid = ? AND (local_id = ? OR id = ?) ORDER BY CASE WHEN local_id = ? THEN 0 ELSE 1 END, id LIMIT 1'
+        );
+        $stmt->execute([$abId, $id, $id, $id]);
         $row = $stmt->fetch();
         if (!$row) {
             return null;
         }
 
-        return array_merge(['id' => $row['id'], 'uri' => $row['uri']], self::parseVCard($row['carddata']));
+        return array_merge([
+            'id'    => (int) ($row['local_id'] ?: $row['id']),
+            'db_id' => (int) $row['id'],
+            'uri'   => $row['uri'],
+        ], self::parseVCard($row['carddata']));
     }
 
     // -------------------------------------------------------
@@ -247,12 +317,194 @@ class Contact
         return $vcard->serialize();
     }
 
+    private static function applyManagedFields(VCard $vcard, array $data): void
+    {
+        $uid = $data['uid'] ?: 'cardy-' . bin2hex(random_bytes(16));
+
+        unset($vcard->FN);
+        unset($vcard->N);
+        unset($vcard->ORG);
+        unset($vcard->TITLE);
+        unset($vcard->EMAIL);
+        unset($vcard->TEL);
+        unset($vcard->ADR);
+        unset($vcard->BDAY);
+        unset($vcard->NOTE);
+        unset($vcard->UID);
+
+        $vcard->add('UID', $uid);
+
+        $fn = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
+        if (empty($fn)) {
+            $fn = $data['org'] ?: $data['email'] ?: 'Unknown';
+        }
+        $vcard->add('FN', $fn);
+        $vcard->add('N', [
+            $data['last_name']  ?? '',
+            $data['first_name'] ?? '',
+            '',
+            '',
+            '',
+        ]);
+
+        if (!empty($data['org'])) {
+            $vcard->add('ORG', $data['org']);
+        }
+        if (!empty($data['title'])) {
+            $vcard->add('TITLE', $data['title']);
+        }
+
+        foreach (($data['emails'] ?? []) as $e) {
+            if (empty($e['address'])) {
+                continue;
+            }
+            $prop = $vcard->add('EMAIL', $e['address']);
+            if (!empty($e['type'])) {
+                $prop->add('TYPE', strtoupper($e['type']));
+            }
+        }
+
+        foreach (($data['phones'] ?? []) as $p) {
+            if (empty($p['number'])) {
+                continue;
+            }
+            $prop = $vcard->add('TEL', $p['number']);
+            if (!empty($p['type'])) {
+                $prop->add('TYPE', strtoupper($p['type']));
+            }
+        }
+
+        foreach (($data['addresses'] ?? []) as $a) {
+            $prop = $vcard->add('ADR', [
+                '',
+                '',
+                $a['street']   ?? '',
+                $a['city']     ?? '',
+                $a['region']   ?? '',
+                $a['postcode'] ?? '',
+                $a['country']  ?? '',
+            ]);
+            if (!empty($a['type'])) {
+                $prop->add('TYPE', strtoupper($a['type']));
+            }
+        }
+
+        if (!empty($data['birthday'])) {
+            $vcard->add('BDAY', $data['birthday']);
+        }
+        if (!empty($data['note'])) {
+            $vcard->add('NOTE', $data['note']);
+        }
+    }
+
     // -------------------------------------------------------
     // Write
     // -------------------------------------------------------
 
+    private static function ensureUniqueUri(int $addressBookId, string $baseUri): string
+    {
+        $pdo = Database::getInstance();
+
+        $safeBase = preg_replace('/[^a-zA-Z0-9._-]/', '-', $baseUri) ?: ('cardy-' . bin2hex(random_bytes(8)) . '.vcf');
+        $safeBase = preg_replace('/-+/', '-', $safeBase) ?: ('cardy-' . bin2hex(random_bytes(8)) . '.vcf');
+
+        $candidate = $safeBase;
+        $suffix = 1;
+
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM cards WHERE addressbookid = ? AND uri = ?');
+        while (true) {
+            $stmt->execute([$addressBookId, $candidate]);
+            if ((int) $stmt->fetchColumn() === 0) {
+                return $candidate;
+            }
+
+            $suffix++;
+            $candidate = preg_replace('/\.vcf$/i', '', $safeBase) . '-' . $suffix . '.vcf';
+        }
+    }
+
+    private static function createFromSerializedVCard(int $addressBookId, string $serializedVCard): int
+    {
+        self::ensureLocalIdColumn();
+        $pdo = Database::getInstance();
+
+        try {
+            $vcard = Reader::read($serializedVCard);
+            if (!($vcard instanceof VCard)) {
+                $vcard = new VCard(['VERSION' => '3.0']);
+            }
+        } catch (\Exception $e) {
+            $vcard = new VCard(['VERSION' => '3.0']);
+        }
+
+        $uid = isset($vcard->UID) ? trim((string) $vcard->UID) : '';
+        if ($uid === '') {
+            $uid = 'cardy-' . bin2hex(random_bytes(16));
+            $vcard->add('UID', $uid);
+        }
+
+        if (!isset($vcard->VERSION)) {
+            $vcard->add('VERSION', '3.0');
+        }
+
+        $vcardData = $vcard->serialize();
+        $uri = self::ensureUniqueUri($addressBookId, $uid . '.vcf');
+        $localId = self::nextFreeLocalId($addressBookId);
+        $etag = md5($vcardData);
+        $now = time();
+
+        $pdo->prepare(
+            'INSERT INTO cards (addressbookid, local_id, carddata, uri, lastmodified, etag, size) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$addressBookId, $localId, $vcardData, $uri, $now, $etag, strlen($vcardData)]);
+
+        $cardId = (int) $pdo->lastInsertId();
+        self::bumpSyncToken($addressBookId, $uri, 1);
+
+        return $cardId;
+    }
+
+    public static function importVCardData(string $username, string $rawData): array
+    {
+        $abId = self::getAddressBookId($username);
+        if (!$abId) {
+            throw new \RuntimeException('No address book found for user.');
+        }
+
+        preg_match_all('/BEGIN:VCARD[\s\S]*?END:VCARD\s*/i', $rawData, $matches);
+        $entries = $matches[0] ?? [];
+
+        if (empty($entries) && stripos($rawData, 'BEGIN:VCARD') !== false) {
+            $entries = [trim($rawData)];
+        }
+
+        if (empty($entries)) {
+            throw new \RuntimeException('No vCard entries found in file.');
+        }
+
+        $imported = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($entries as $index => $entry) {
+            try {
+                self::createFromSerializedVCard($abId, trim($entry));
+                $imported++;
+            } catch (\Throwable $e) {
+                $failed++;
+                $errors[] = 'vCard #' . ($index + 1) . ': ' . $e->getMessage();
+            }
+        }
+
+        return [
+            'imported' => $imported,
+            'failed'   => $failed,
+            'errors'   => $errors,
+        ];
+    }
+
     public static function create(string $username, array $data): int
     {
+        self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
         $abId = self::getAddressBookId($username);
         if (!$abId) {
@@ -262,13 +514,14 @@ class Contact
         $uid      = 'cardy-' . bin2hex(random_bytes(16));
         $data['uid'] = $uid;
         $vcardData = self::buildVCard($data);
-        $uri      = $uid . '.vcf';
+        $uri      = self::ensureUniqueUri($abId, $uid . '.vcf');
+        $localId  = self::nextFreeLocalId($abId);
         $etag     = md5($vcardData);
         $now      = time();
 
         $pdo->prepare(
-            'INSERT INTO cards (addressbookid, carddata, uri, lastmodified, etag, size) VALUES (?, ?, ?, ?, ?, ?)'
-        )->execute([$abId, $vcardData, $uri, $now, $etag, strlen($vcardData)]);
+            'INSERT INTO cards (addressbookid, local_id, carddata, uri, lastmodified, etag, size) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$abId, $localId, $vcardData, $uri, $now, $etag, strlen($vcardData)]);
 
         $cardId = (int) $pdo->lastInsertId();
         self::bumpSyncToken($abId, $uri, 1);
@@ -278,14 +531,17 @@ class Contact
 
     public static function update(int $id, string $username, array $data): void
     {
+        self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
         $abId = self::getAddressBookId($username);
         if (!$abId) {
             return;
         }
 
-        $stmt = $pdo->prepare('SELECT uri, carddata FROM cards WHERE id = ? AND addressbookid = ?');
-        $stmt->execute([$id, $abId]);
+        $stmt = $pdo->prepare(
+            'SELECT id, uri, carddata FROM cards WHERE addressbookid = ? AND (local_id = ? OR id = ?) ORDER BY CASE WHEN local_id = ? THEN 0 ELSE 1 END, id LIMIT 1'
+        );
+        $stmt->execute([$abId, $id, $id, $id]);
         $row = $stmt->fetch();
         if (!$row) {
             return;
@@ -295,37 +551,51 @@ class Contact
         $existing = self::parseVCard($row['carddata']);
         $data['uid'] = $existing['uid'] ?: ('cardy-' . bin2hex(random_bytes(16)));
 
-        $vcardData = self::buildVCard($data);
+        try {
+            $vcard = Reader::read($row['carddata']);
+            if (!($vcard instanceof VCard)) {
+                $vcard = new VCard(['VERSION' => '3.0']);
+            }
+        } catch (\Exception $e) {
+            $vcard = new VCard(['VERSION' => '3.0']);
+        }
+
+        self::applyManagedFields($vcard, $data);
+        $vcardData = $vcard->serialize();
         $etag      = md5($vcardData);
         $now       = time();
 
         $pdo->prepare('UPDATE cards SET carddata = ?, etag = ?, size = ?, lastmodified = ? WHERE id = ?')
-            ->execute([$vcardData, $etag, strlen($vcardData), $now, $id]);
+            ->execute([$vcardData, $etag, strlen($vcardData), $now, (int) $row['id']]);
 
         self::bumpSyncToken($abId, $row['uri'], 2);
     }
 
     public static function delete(int $id, string $username): void
     {
+        self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
         $abId = self::getAddressBookId($username);
         if (!$abId) {
             return;
         }
 
-        $stmt = $pdo->prepare('SELECT uri FROM cards WHERE id = ? AND addressbookid = ?');
-        $stmt->execute([$id, $abId]);
+        $stmt = $pdo->prepare(
+            'SELECT id, uri FROM cards WHERE addressbookid = ? AND (local_id = ? OR id = ?) ORDER BY CASE WHEN local_id = ? THEN 0 ELSE 1 END, id LIMIT 1'
+        );
+        $stmt->execute([$abId, $id, $id, $id]);
         $row = $stmt->fetch();
         if (!$row) {
             return;
         }
 
-        $pdo->prepare('DELETE FROM cards WHERE id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM cards WHERE id = ?')->execute([(int) $row['id']]);
         self::bumpSyncToken($abId, $row['uri'], 3);
     }
 
     public static function countForUser(string $username): int
     {
+        self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
         $abId = self::getAddressBookId($username);
         if (!$abId) {

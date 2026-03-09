@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 #  Cardy Install Script
-#  Supports: Ubuntu 22.04/24.04, Debian 11/12
+#  Optimized for: Debian 13+ (also supports Ubuntu 22.04/24.04)
 # ============================================================
 set -euo pipefail
 
@@ -23,17 +23,149 @@ if [[ $EUID -ne 0 ]]; then
     error "This script must be run as root (use sudo)."
 fi
 
-MODE="${1:-install}"
+MODE_RAW="${1:---fresh-install}"
+
+usage() {
+    cat <<USAGE
+Usage: sudo bash install.sh [mode]
+
+Modes:
+  --fresh-install   Delete existing Cardy app data/config/db/nginx and install cleanly
+  --update          Update app files, DB schema, and nginx config while preserving user data
+  --uninstall       Delete Cardy app data/config/db/nginx
+
+Legacy aliases:
+  install, --install, fresh, --fresh
+  update
+  uninstall
+USAGE
+}
+
+case "${MODE_RAW}" in
+    --fresh-install|--install|install|fresh|--fresh)
+        MODE="fresh-install"
+        ;;
+    --update|update)
+        MODE="update"
+        ;;
+    --uninstall|uninstall)
+        MODE="uninstall"
+        ;;
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    *)
+        usage
+        error "Unknown mode: ${MODE_RAW}"
+        ;;
+esac
+
+config_read() {
+    local key="$1"
+    local path="$2"
+    php -r "\$c = @include '${path}'; if (!is_array(\$c)) { exit(1); } \$v = \$c; foreach (explode('.', '${key}') as \$k) { if (!is_array(\$v) || !array_key_exists(\$k, \$v)) { exit(1); } \$v = \$v[\$k]; } if (is_array(\$v)) { echo json_encode(\$v); } else { echo \$v; }" 2>/dev/null || true
+}
+
+get_mysql_root_cmd() {
+    MYSQL_CMD="mysql -u root"
+    if ! ${MYSQL_CMD} -e "SELECT 1" &>/dev/null; then
+        MYSQL_CMD="sudo mysql -u root"
+    fi
+}
+
+reload_php_fpm() {
+    local reloaded=0
+    while IFS= read -r svc; do
+        if systemctl reload "$svc" 2>/dev/null; then
+            reloaded=1
+            break
+        fi
+    done < <(systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 2>/dev/null | awk '{print $1}' | sort -V -r)
+
+    if [[ ${reloaded} -eq 0 ]]; then
+        warn "No PHP-FPM service detected to reload; continuing."
+    fi
+}
+
+detect_php_version_from_services() {
+    systemctl list-unit-files --type=service --no-legend 'php*-fpm.service' 2>/dev/null \
+        | awk '{print $1}' \
+        | sed -nE 's/^php([0-9]+\.[0-9]+)-fpm\.service$/\1/p' \
+        | sort -V -r \
+        | head -n1
+}
+
+remove_cardy_nginx_configs() {
+    rm -f /etc/nginx/sites-enabled/cardy /etc/nginx/sites-available/cardy
+    rm -f /etc/nginx/sites-enabled/cardy-dav /etc/nginx/sites-available/cardy-dav
+    rm -f /etc/nginx/sites-enabled/cardy-webui /etc/nginx/sites-available/cardy-webui
+
+    if command -v nginx &>/dev/null; then
+        nginx -t >/dev/null 2>&1 && systemctl reload nginx || true
+    fi
+}
+
+drop_cardy_db_and_user() {
+    local db_host="$1"
+    local db_name="$2"
+    local db_user="$3"
+
+    if ! command -v mysql &>/dev/null; then
+        warn "mysql client not found; skipping DB cleanup."
+        return
+    fi
+
+    systemctl enable --now mysql >/dev/null 2>&1 || systemctl enable --now mariadb >/dev/null 2>&1 || true
+    get_mysql_root_cmd
+
+    info "Dropping database/user if they exist (${db_name}, ${db_user}@${db_host})..."
+    ${MYSQL_CMD} <<EOF
+DROP DATABASE IF EXISTS \`${db_name}\`;
+DROP USER IF EXISTS '${db_user}'@'${db_host}';
+FLUSH PRIVILEGES;
+EOF
+}
+
+cleanup_cardy_artifacts() {
+    local db_host="$1"
+    local db_name="$2"
+    local db_user="$3"
+
+    header "Removing existing Cardy artifacts"
+    remove_cardy_nginx_configs
+    rm -rf "${CARDY_DIR}"
+    rm -f /usr/local/bin/cardy-ctl
+    drop_cardy_db_and_user "$db_host" "$db_name" "$db_user"
+    success "Existing Cardy artifacts removed."
+}
+
+confirm_destructive_action() {
+    local prompt_text="$1"
+    local answer=""
+    echo ""
+    warn "${prompt_text}"
+    read -r -p "Type YES to continue: " answer
+    if [[ "${answer}" != "YES" ]]; then
+        error "Aborted by user."
+    fi
+}
 
 # ============================================================
 #  UPDATE MODE
 # ============================================================
-if [[ "$MODE" == "--update" ]]; then
+if [[ "${MODE}" == "update" ]]; then
     header "Updating Cardy"
 
     if [[ ! -f "${CARDY_DIR}/config/config.php" ]]; then
         error "Cardy does not appear to be installed at ${CARDY_DIR}."
     fi
+
+    DB_HOST="$(config_read 'db.host' "${CARDY_DIR}/config/config.php")"
+    DB_PORT="$(config_read 'db.port' "${CARDY_DIR}/config/config.php")"
+    DB_NAME="$(config_read 'db.name' "${CARDY_DIR}/config/config.php")"
+    DB_USER="$(config_read 'db.user' "${CARDY_DIR}/config/config.php")"
+    PHP_VER="$(detect_php_version_from_services)"
 
     info "Copying application files..."
     rsync -a --exclude='config/config.php' --exclude='vendor/' \
@@ -42,17 +174,81 @@ if [[ "$MODE" == "--update" ]]; then
     info "Running composer install..."
     cd "${CARDY_DIR}" && sudo -u www-data composer install --no-dev --optimize-autoloader --no-interaction
 
-    info "Reloading PHP-FPM..."
-    systemctl reload php8.4-fpm 2>/dev/null || systemctl reload php8.3-fpm 2>/dev/null || systemctl reload php8.2-fpm 2>/dev/null || systemctl reload php8.1-fpm 2>/dev/null || true
+    info "Applying database schema updates..."
+    systemctl enable --now mysql >/dev/null 2>&1 || systemctl enable --now mariadb >/dev/null 2>&1 || true
+    get_mysql_root_cmd
+    ${MYSQL_CMD} "${DB_NAME}" < "${SCRIPT_DIR}/sql/schema.sql"
+
+    if [[ -z "${PHP_VER}" ]]; then
+        while IFS= read -r v; do
+            CANDIDATE="$(apt-cache policy "php${v}-fpm" 2>/dev/null | awk -F': ' '/Candidate:/ {print $2}')"
+            if [[ -n "$CANDIDATE" && "$CANDIDATE" != "(none)" ]]; then
+                PHP_VER="$v"
+                break
+            fi
+        done < <(apt-cache pkgnames | grep -E '^php[0-9]+\.[0-9]+-fpm$' | sed -E 's/^php([0-9]+\.[0-9]+)-fpm$/\1/' | sort -V -r)
+    fi
+
+    info "Refreshing Nginx configuration..."
+    cp "${CARDY_DIR}/config/nginx/cardy.conf" /etc/nginx/sites-available/cardy
+    if [[ -n "${PHP_VER}" ]]; then
+        sed -i "s|php8.2-fpm.sock|php${PHP_VER}-fpm.sock|g" /etc/nginx/sites-available/cardy
+    fi
+    sed -i "s|root /var/www/cardy/public;|root ${CARDY_DIR}/public;|" /etc/nginx/sites-available/cardy
+    sed -i "s|alias /var/www/cardy/public/webui/assets/;|alias ${CARDY_DIR}/public/webui/assets/;|" /etc/nginx/sites-available/cardy
+    ln -sf /etc/nginx/sites-available/cardy /etc/nginx/sites-enabled/cardy
+    rm -f /etc/nginx/sites-enabled/cardy-dav /etc/nginx/sites-available/cardy-dav
+    rm -f /etc/nginx/sites-enabled/cardy-webui /etc/nginx/sites-available/cardy-webui
+
+    nginx -t && systemctl reload nginx
+    reload_php_fpm
 
     success "Cardy updated successfully."
     exit 0
 fi
 
 # ============================================================
-#  INSTALL MODE
+#  UNINSTALL MODE
 # ============================================================
-header "Cardy Installation"
+if [[ "${MODE}" == "uninstall" ]]; then
+    header "Uninstalling Cardy"
+
+    EXISTING_CONFIG="${CARDY_DIR}/config/config.php"
+    EXIST_DB_HOST="$(config_read 'db.host' "${EXISTING_CONFIG}")"
+    EXIST_DB_NAME="$(config_read 'db.name' "${EXISTING_CONFIG}")"
+    EXIST_DB_USER="$(config_read 'db.user' "${EXISTING_CONFIG}")"
+
+    echo ""
+    echo -e "${BOLD}Confirm database cleanup target (press Enter to accept defaults):${RESET}"
+    echo ""
+    read -r -p "Database host [${EXIST_DB_HOST:-localhost}]: " DB_HOST; DB_HOST="${DB_HOST:-${EXIST_DB_HOST:-localhost}}"
+    read -r -p "Database name [${EXIST_DB_NAME:-cardy}]: " DB_NAME; DB_NAME="${DB_NAME:-${EXIST_DB_NAME:-cardy}}"
+    read -r -p "Database user [${EXIST_DB_USER:-cardy}]: " DB_USER; DB_USER="${DB_USER:-${EXIST_DB_USER:-cardy}}"
+
+    confirm_destructive_action "Uninstall will permanently remove Cardy app files, DB data, and nginx configs."
+
+    cleanup_cardy_artifacts "$DB_HOST" "$DB_NAME" "$DB_USER"
+    success "Cardy uninstalled."
+    exit 0
+fi
+
+# ============================================================
+#  FRESH INSTALL MODE
+# ============================================================
+header "Cardy Fresh Installation"
+
+# -------- OS check ------------------------------------------
+if [[ -r /etc/os-release ]]; then
+    . /etc/os-release
+    if [[ "${ID:-}" == "debian" ]]; then
+        DEBIAN_MAJOR="${VERSION_ID%%.*}"
+        if [[ -n "${DEBIAN_MAJOR}" && "${DEBIAN_MAJOR}" =~ ^[0-9]+$ && ${DEBIAN_MAJOR} -lt 13 ]]; then
+            warn "This installer is optimized for Debian 13+. Continuing on Debian ${VERSION_ID}."
+        else
+            info "Detected Debian ${VERSION_ID} (optimized target)."
+        fi
+    fi
+fi
 
 # -------- Select PHP version --------------------------------
 PHP_VER=""
@@ -85,21 +281,26 @@ if [[ "${ADMIN_PASS}" == "admin" ]]; then
     warn "Admin password is set to the default value 'admin'. Change it after installation."
 fi
 
+confirm_destructive_action "Fresh install will permanently delete existing Cardy app files, DB data, and nginx configs before reinstalling."
+
+cleanup_cardy_artifacts "$DB_HOST" "$DB_NAME" "$DB_USER"
+
 # -------- Install system packages ---------------------------
 header "Installing system packages"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 
-for v in 8.4 8.3 8.2 8.1; do
-    if apt-cache show "php${v}-fpm" >/dev/null 2>&1; then
+while IFS= read -r v; do
+    CANDIDATE="$(apt-cache policy "php${v}-fpm" 2>/dev/null | awk -F': ' '/Candidate:/ {print $2}')"
+    if [[ -n "$CANDIDATE" && "$CANDIDATE" != "(none)" ]]; then
         PHP_VER="$v"
         break
     fi
-done
+done < <(apt-cache pkgnames | grep -E '^php[0-9]+\.[0-9]+-fpm$' | sed -E 's/^php([0-9]+\.[0-9]+)-fpm$/\1/' | sort -V -r)
 
 if [[ -z "$PHP_VER" ]]; then
-    error "No supported PHP-FPM package found (checked php8.4/8.3/8.2/8.1)."
+    error "No installable versioned PHP-FPM package found from apt repositories."
 fi
 
 info "PHP target version: ${PHP_VER}"
@@ -148,6 +349,8 @@ fi
 
 info "Creating database '${DB_NAME}'..."
 ${MYSQL_CMD} <<EOF
+DROP DATABASE IF EXISTS \`${DB_NAME}\`;
+DROP USER IF EXISTS '${DB_USER}'@'${DB_HOST}';
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'${DB_HOST}' IDENTIFIED BY '${DB_PASS}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'${DB_HOST}';
@@ -193,6 +396,7 @@ return [
         'webui_url'      => '${WEBUI_URL}',
         'dav_url'        => '${DAV_URL}',
         'session_secret' => '${SESSION_SECRET}',
+        'trusted_proxies' => ['127.0.0.1', '::1'],
         'timezone'       => 'UTC',
         'name'           => 'Cardy',
     ],
@@ -208,8 +412,11 @@ header "Creating admin user"
 ADMIN_HASH=$(php -r "echo password_hash('${ADMIN_PASS}', PASSWORD_BCRYPT);")
 
 ${MYSQL_CMD} "${DB_NAME}" <<EOF
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(16) NOT NULL DEFAULT 'user' AFTER is_admin;
+UPDATE users SET role = CASE WHEN is_admin = 1 THEN 'admin' ELSE 'user' END WHERE role IS NULL OR role = '';
 INSERT IGNORE INTO users (username, password_hash, email, display_name, is_admin)
 VALUES ('${ADMIN_USER}', '${ADMIN_HASH}', '', '${ADMIN_USER}', 1);
+UPDATE users SET role = 'admin', is_admin = 1 WHERE username = '${ADMIN_USER}';
 EOF
 
 # Create SabreDAV principal + default address book + default calendar

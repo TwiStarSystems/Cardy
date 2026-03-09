@@ -11,7 +11,7 @@ $initials = strtoupper(
 <div class="page-header">
   <div>
     <a href="/contacts" class="text-muted text-sm">← Contacts</a>
-    <h1 class="page-title" style="margin-top:4px"><?= $_ctrl->e($c['fn'] ?: 'Unknown') ?></h1>
+    <h1 class="page-title" style="margin-top:4px"><?= $_ctrl->e($c['fn'] ?: 'Unknown') ?> <span class="text-muted" style="font-size:var(--text-sm)">#<?= (int) $c['id'] ?></span></h1>
     <?php if ($c['org']): ?>
     <p class="page-subtitle"><?= $_ctrl->e($c['org']) ?></p>
     <?php endif; ?>

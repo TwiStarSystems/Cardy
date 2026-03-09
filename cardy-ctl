@@ -79,13 +79,13 @@ switch ($command) {
             break;
         }
         printTable(
-            ['ID', 'Username', 'Display Name', 'Email', 'Admin', 'Created'],
+            ['ID', 'Username', 'Display Name', 'Email', 'Role', 'Created'],
             array_map(fn($u) => [
                 $u['id'],
                 $u['username'],
                 $u['display_name'],
                 $u['email'],
-                $u['is_admin'] ? 'Yes' : 'No',
+                $u['role'] ?? ($u['is_admin'] ? 'admin' : 'user'),
                 date('Y-m-d', strtotime($u['created_at'])),
             ], $users)
         );
@@ -96,6 +96,13 @@ switch ($command) {
     case 'user:add':
         $username = $args[0] ?? '';
         $isAdmin  = in_array('--admin', $args, true);
+        $roleArg  = null;
+        foreach ($args as $arg) {
+            if (str_starts_with($arg, '--role=')) {
+                $roleArg = strtolower(substr($arg, 7));
+            }
+        }
+        $role = in_array($roleArg, ['user', 'admin'], true) ? $roleArg : ($isAdmin ? 'admin' : 'user');
 
         if (empty($username)) {
             $username = prompt('Username: ');
@@ -126,8 +133,8 @@ switch ($command) {
         $email       = prompt('Email (optional): ');
         $displayName = prompt('Display name (optional): ');
 
-        \Cardy\Models\User::create($username, $password, $email, $displayName, $isAdmin);
-        echo "User '{$username}' created successfully" . ($isAdmin ? ' (admin)' : '') . ".\n";
+        \Cardy\Models\User::create($username, $password, $email, $displayName, $role);
+        echo "User '{$username}' created successfully ({$role}).\n";
         break;
 
     // --------------------------------------------------
@@ -208,7 +215,7 @@ cardy-ctl — Cardy management tool
 
 Commands:
   user:list                   List all users
-  user:add <username> [--admin]  Create a new user (optionally as admin)
+    user:add <username> [--admin|--role=user|--role=admin]  Create a new user with role
   user:password <username>    Change a user's password
   user:delete <username>      Delete a user and all their data
   db:migrate                  Apply (or re-apply) the database schema
