@@ -57,6 +57,7 @@ $server->addPlugin(new \Sabre\DAV\Browser\Plugin());
 $server->addPlugin(new \Sabre\DAV\Sync\Plugin());
 $server->addPlugin(new \Sabre\CardDAV\Plugin());
 $server->addPlugin(new \Sabre\CalDAV\Plugin());
+$server->addPlugin(new \Sabre\DAV\Sharing\Plugin());
 $server->addPlugin(new \Sabre\CalDAV\Schedule\Plugin());
 $server->addPlugin(new \Sabre\CalDAV\SharingPlugin());
 $server->addPlugin(new \Sabre\CalDAV\Subscriptions\Plugin());
