@@ -88,6 +88,24 @@ reload_php_fpm() {
     fi
 }
 
+run_composer_install() {
+    local app_dir="$1"
+    local composer_cmd=(composer install --no-dev --optimize-autoloader --no-interaction)
+
+    if command -v runuser >/dev/null 2>&1; then
+        (cd "${app_dir}" && runuser -u www-data -- "${composer_cmd[@]}")
+        return
+    fi
+
+    if command -v su >/dev/null 2>&1; then
+        (cd "${app_dir}" && su -s /bin/bash -c "${composer_cmd[*]}" www-data)
+        return
+    fi
+
+    warn "runuser/su not available; running composer install as root."
+    (cd "${app_dir}" && "${composer_cmd[@]}")
+}
+
 configure_php_upload_limits() {
     local php_ver="$1"
     if [[ -z "${php_ver}" ]]; then
@@ -201,7 +219,7 @@ if [[ "${MODE}" == "update" ]]; then
         "${SCRIPT_DIR}/" "${CARDY_DIR}/"
 
     info "Running composer install..."
-    cd "${CARDY_DIR}" && sudo -u www-data composer install --no-dev --optimize-autoloader --no-interaction
+    run_composer_install "${CARDY_DIR}"
 
     info "Applying database schema updates..."
     systemctl enable --now mysql >/dev/null 2>&1 || systemctl enable --now mariadb >/dev/null 2>&1 || true
@@ -232,6 +250,7 @@ if [[ "${MODE}" == "update" ]]; then
     nginx -t && systemctl reload nginx
     configure_php_upload_limits "${PHP_VER}"
     reload_php_fpm
+    systemctl restart nginx
 
     success "Cardy updated successfully."
     exit 0
@@ -403,7 +422,7 @@ rsync -a --exclude='config/config.php' --exclude='vendor/' \
 
 # Install PHP dependencies
 info "Running composer install..."
-cd "${CARDY_DIR}" && composer install --no-dev --optimize-autoloader --no-interaction
+run_composer_install "${CARDY_DIR}"
 
 success "Application files installed."
 

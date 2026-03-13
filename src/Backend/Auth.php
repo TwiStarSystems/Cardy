@@ -16,7 +16,7 @@ class Auth extends AbstractBasic
 {
     protected $realm = 'Cardy';
 
-    public function __construct(string $realm = 'Cardy')
+    public function __construct($realm = 'Cardy')
     {
         $this->realm = $realm;
     }
