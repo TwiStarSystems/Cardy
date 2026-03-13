@@ -14,7 +14,7 @@ use Cardy\Database;
  */
 class Auth extends AbstractBasic
 {
-    protected string $realm = 'Cardy';
+    protected $realm = 'Cardy';
 
     public function __construct(string $realm = 'Cardy')
     {

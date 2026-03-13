@@ -2,3 +2,4 @@ vendor/
 config/config.php
 *.log
 .env
+docs/
