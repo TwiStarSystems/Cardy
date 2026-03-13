@@ -90,20 +90,31 @@ reload_php_fpm() {
 
 run_composer_install() {
     local app_dir="$1"
-    local composer_cmd=(composer install --no-dev --optimize-autoloader --no-interaction)
+    local composer_cmd='composer install --no-dev --optimize-autoloader --no-interaction'
 
     if command -v runuser >/dev/null 2>&1; then
-        (cd "${app_dir}" && runuser -u www-data -- "${composer_cmd[@]}")
+        (
+            cd "${app_dir}" && \
+            runuser -u www-data -- env HOME="${app_dir}" COMPOSER_HOME="${app_dir}/.composer" \
+                /bin/sh -lc "mkdir -p \"\$COMPOSER_HOME\"; git config --global --add safe.directory \"${app_dir}\" >/dev/null 2>&1 || true; ${composer_cmd}"
+        )
         return
     fi
 
     if command -v su >/dev/null 2>&1; then
-        (cd "${app_dir}" && su -s /bin/bash -c "${composer_cmd[*]}" www-data)
+        (
+            cd "${app_dir}" && \
+            su -s /bin/sh -c "HOME='${app_dir}' COMPOSER_HOME='${app_dir}/.composer' /bin/sh -lc 'mkdir -p \"\$COMPOSER_HOME\"; git config --global --add safe.directory \"${app_dir}\" >/dev/null 2>&1 || true; ${composer_cmd}'" www-data
+        )
         return
     fi
 
     warn "runuser/su not available; running composer install as root."
-    (cd "${app_dir}" && "${composer_cmd[@]}")
+    (
+        cd "${app_dir}" && \
+        git config --global --add safe.directory "${app_dir}" >/dev/null 2>&1 || true
+        /bin/sh -lc "${composer_cmd}"
+    )
 }
 
 configure_php_upload_limits() {
@@ -217,6 +228,9 @@ if [[ "${MODE}" == "update" ]]; then
     info "Copying application files..."
     rsync -a --exclude='config/config.php' --exclude='vendor/' \
         "${SCRIPT_DIR}/" "${CARDY_DIR}/"
+
+    # Composer runs as www-data where possible, so ensure app dir is writable first.
+    chown -R www-data:www-data "${CARDY_DIR}"
 
     info "Running composer install..."
     run_composer_install "${CARDY_DIR}"
@@ -419,6 +433,9 @@ mkdir -p "${CARDY_DIR}"/{dav,webui/assets/{css,js}}
 # Copy source
 rsync -a --exclude='config/config.php' --exclude='vendor/' \
     "${SCRIPT_DIR}/" "${CARDY_DIR}/"
+
+# Composer runs as www-data where possible, so ensure app dir is writable first.
+chown -R www-data:www-data "${CARDY_DIR}"
 
 # Install PHP dependencies
 info "Running composer install..."
