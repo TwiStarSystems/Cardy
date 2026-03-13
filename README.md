@@ -91,6 +91,12 @@ Cardy supports running behind an Nginx reverse proxy (including TLS termination)
 	- `app.webui_url` and `app.dav_url` to your public HTTPS URL.
 	- `app.trusted_proxies` to the front proxy IP(s) or CIDR(s).
 
+Reverse proxy checklist:
+- Keep backend Cardy Nginx (`cardy.conf`) on plain HTTP.
+- Terminate TLS only on the public/front Nginx.
+- Forward `Host`, `Authorization`, and `X-Forwarded-*` headers from front Nginx.
+- Ensure backend `app.trusted_proxies` includes only your proxy addresses.
+
 Example `trusted_proxies` values:
 - `['127.0.0.1', '::1']` for same-host reverse proxy
 - `['10.0.0.10']` for a dedicated proxy host
