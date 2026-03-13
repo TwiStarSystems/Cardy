@@ -21,7 +21,7 @@ class Auth extends AbstractBasic
         $this->realm = $realm;
     }
 
-    protected function validateUserPass(string $username, string $password): bool
+    protected function validateUserPass($username, $password)
     {
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare('SELECT password_hash FROM users WHERE username = ?');
