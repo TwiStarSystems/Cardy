@@ -8,6 +8,39 @@ use Cardy\WebUI\Controller;
 
 class ContactsController extends Controller
 {
+    // -------------------------------------------------------
+    // Active address book session helpers
+    // -------------------------------------------------------
+
+    private function getActiveAddressBookId(string $username): ?int
+    {
+        $key = 'active_ab_' . $username;
+        if (!empty($_SESSION[$key])) {
+            $id    = (int) $_SESSION[$key];
+            $books = Contact::getAllAddressBooksForUser($username);
+            foreach ($books as $book) {
+                if ((int) $book['id'] === $id) {
+                    return $id;
+                }
+            }
+            unset($_SESSION[$key]);
+        }
+        $id = Contact::getAddressBookId($username);
+        if ($id !== null) {
+            $_SESSION[$key] = $id;
+        }
+        return $id;
+    }
+
+    private function setActiveAddressBookId(string $username, int $id): void
+    {
+        $_SESSION['active_ab_' . $username] = $id;
+    }
+
+    // -------------------------------------------------------
+    // Contact list
+    // -------------------------------------------------------
+
     public function index(): void
     {
         $user        = $this->requireAuth();
@@ -29,7 +62,17 @@ class ContactsController extends Controller
             $groupFilter = '';
         }
 
-        $contacts = Contact::allForUser($user['username'], $search, $sort, $groupFilter, $starredOnly);
+        $allAddressBooks = Contact::getAllAddressBooksForUser($user['username']);
+        $activeAbId      = $this->getActiveAddressBookId($user['username']);
+        $activeBook      = null;
+        foreach ($allAddressBooks as $book) {
+            if ((int) $book['id'] === $activeAbId) {
+                $activeBook = $book;
+                break;
+            }
+        }
+
+        $contacts = Contact::allForUser($user['username'], $search, $sort, $groupFilter, $starredOnly, $activeAbId);
         if ($category !== 'all') {
             $contacts = array_values(array_filter($contacts, function (array $contact) use ($category): bool {
                 $isBusiness = $this->isBusinessContact($contact);
@@ -37,19 +80,22 @@ class ContactsController extends Controller
             }));
         }
 
-        $allGroups = Contact::getAllGroups($user['username']);
+        $allGroups = Contact::getAllGroups($user['username'], $activeAbId);
 
         $this->render('contacts/index', [
-            'user'        => $user,
-            'contacts'    => $contacts,
-            'allGroups'   => $allGroups,
-            'search'      => $search,
-            'sort'        => $sort,
-            'category'    => $category,
-            'groupFilter' => $groupFilter,
-            'starredOnly' => $starredOnly,
-            'csrf'        => $this->csrfToken(),
-            'flash'       => $this->getFlash(),
+            'user'            => $user,
+            'contacts'        => $contacts,
+            'allGroups'       => $allGroups,
+            'allAddressBooks' => $allAddressBooks,
+            'activeBook'      => $activeBook,
+            'activeAbId'      => $activeAbId,
+            'search'          => $search,
+            'sort'            => $sort,
+            'category'        => $category,
+            'groupFilter'     => $groupFilter,
+            'starredOnly'     => $starredOnly,
+            'csrf'            => $this->csrfToken(),
+            'flash'           => $this->getFlash(),
         ]);
     }
 
@@ -62,14 +108,15 @@ class ContactsController extends Controller
 
     public function view(array $params): void
     {
-        $user    = $this->requireAuth();
-        $contact = Contact::findById((int) $params['id'], $user['username']);
+        $user       = $this->requireAuth();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $contact    = Contact::findById((int) $params['id'], $user['username'], $activeAbId);
         if (!$contact) {
             $this->abort(404, 'Contact not found.');
         }
 
-        $history    = Contact::getHistory((int) $contact['db_id']);
-        $allGroups  = Contact::getAllGroups($user['username']);
+        $history   = Contact::getHistory((int) $contact['db_id']);
+        $allGroups = Contact::getAllGroups($user['username'], $activeAbId);
 
         $this->render('contacts/view', [
             'user'      => $user,
@@ -82,8 +129,9 @@ class ContactsController extends Controller
 
     public function create(): void
     {
-        $user      = $this->requireAuth();
-        $allGroups = Contact::getAllGroups($user['username']);
+        $user       = $this->requireAuth();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $allGroups  = Contact::getAllGroups($user['username'], $activeAbId);
         $this->render('contacts/form', [
             'user'      => $user,
             'contact'   => null,
@@ -104,7 +152,8 @@ class ContactsController extends Controller
 
     public function export(): void
     {
-        $user   = $this->requireAuth();
+        $user       = $this->requireAuth();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
         $format = strtolower(trim($_GET['format'] ?? 'vcf'));
         if (!in_array($format, ['vcf', 'csv', 'icloud_vcf', 'google_csv', 'outlook_csv'], true)) {
             $format = 'vcf';
@@ -113,7 +162,7 @@ class ContactsController extends Controller
         $filename = 'contacts-' . date('Y-m-d');
 
         if ($format === 'vcf' || $format === 'icloud_vcf') {
-            $data = Contact::exportAllVCards($user['username']);
+            $data = Contact::exportAllVCards($user['username'], $activeAbId);
             header('Content-Type: text/vcard; charset=utf-8');
             header('Content-Disposition: attachment; filename="' . $filename . '.vcf"');
             header('Content-Length: ' . strlen($data));
@@ -122,7 +171,7 @@ class ContactsController extends Controller
         }
 
         if ($format === 'google_csv') {
-            $data = Contact::exportGoogleCsv($user['username']);
+            $data = Contact::exportGoogleCsv($user['username'], $activeAbId);
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename="' . $filename . '-google.csv"');
             header('Content-Length: ' . strlen($data));
@@ -131,7 +180,7 @@ class ContactsController extends Controller
         }
 
         if ($format === 'outlook_csv') {
-            $data = Contact::exportOutlookCsv($user['username']);
+            $data = Contact::exportOutlookCsv($user['username'], $activeAbId);
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename="' . $filename . '-outlook.csv"');
             header('Content-Length: ' . strlen($data));
@@ -139,7 +188,7 @@ class ContactsController extends Controller
             exit;
         }
 
-        $data = Contact::exportAllCsv($user['username']);
+        $data = Contact::exportAllCsv($user['username'], $activeAbId);
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $filename . '.csv"');
         header('Content-Length: ' . strlen($data));
@@ -169,9 +218,11 @@ class ContactsController extends Controller
         $isVCard = $this->isVCardUpload($file, $content);
         $isCsv = $this->isCsvUpload($file);
 
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+
         try {
             if ($isVCard) {
-                $result = Contact::importVCardData($user['username'], $content);
+                $result = Contact::importVCardData($user['username'], $content, $activeAbId);
             } elseif ($isCsv) {
                 $result = $this->importCsvContacts($user['username'], $content);
             } else {
@@ -224,13 +275,13 @@ class ContactsController extends Controller
 
     public function store(): void
     {
-        $user = $this->requireAuth();
+        $user       = $this->requireAuth();
         $this->verifyCsrf();
-
-        $data = $this->extractFormData();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $data       = $this->extractFormData();
 
         try {
-            Contact::create($user['username'], $data);
+            Contact::create($user['username'], $data, $activeAbId);
             $this->flash('success', 'Contact created successfully.');
         } catch (\Exception $e) {
             $this->flash('error', 'Failed to create contact: ' . $e->getMessage());
@@ -241,13 +292,14 @@ class ContactsController extends Controller
 
     public function edit(array $params): void
     {
-        $user    = $this->requireAuth();
-        $contact = Contact::findById((int) $params['id'], $user['username']);
+        $user       = $this->requireAuth();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $contact    = Contact::findById((int) $params['id'], $user['username'], $activeAbId);
         if (!$contact) {
             $this->abort(404, 'Contact not found.');
         }
 
-        $allGroups = Contact::getAllGroups($user['username']);
+        $allGroups = Contact::getAllGroups($user['username'], $activeAbId);
         $this->render('contacts/form', [
             'user'      => $user,
             'contact'   => $contact,
@@ -258,19 +310,19 @@ class ContactsController extends Controller
 
     public function update(array $params): void
     {
-        $user = $this->requireAuth();
+        $user       = $this->requireAuth();
         $this->verifyCsrf();
-
-        $contact = Contact::findById((int) $params['id'], $user['username']);
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $contact    = Contact::findById((int) $params['id'], $user['username'], $activeAbId);
         if (!$contact) {
             $this->abort(404, 'Contact not found.');
         }
 
-        $data = $this->extractFormData();
+        $data        = $this->extractFormData();
         $data['uid'] = $contact['uid'];
 
         try {
-            Contact::update((int) $params['id'], $user['username'], $data);
+            Contact::update((int) $params['id'], $user['username'], $data, $activeAbId);
             $this->flash('success', 'Contact updated successfully.');
         } catch (\Exception $e) {
             $this->flash('error', 'Failed to update contact: ' . $e->getMessage());
@@ -281,10 +333,10 @@ class ContactsController extends Controller
 
     public function delete(array $params): void
     {
-        $user = $this->requireAuth();
+        $user       = $this->requireAuth();
         $this->verifyCsrf();
-
-        Contact::delete((int) $params['id'], $user['username']);
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        Contact::delete((int) $params['id'], $user['username'], $activeAbId);
         $this->flash('success', 'Contact deleted.');
         $this->redirect('/contacts');
     }
@@ -918,10 +970,11 @@ class ContactsController extends Controller
 
     public function toggleStar(array $params): void
     {
-        $user = $this->requireAuth();
+        $user       = $this->requireAuth();
         $this->verifyCsrf();
-        $id   = (int) ($params['id'] ?? 0);
-        $newState = Contact::toggleStar($id, $user['username']);
+        $id         = (int) ($params['id'] ?? 0);
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $newState   = Contact::toggleStar($id, $user['username'], $activeAbId);
         // AJAX response
         if ($this->isJsonRequest()) {
             header('Content-Type: application/json');
@@ -937,8 +990,9 @@ class ContactsController extends Controller
 
     public function bulkAction(): void
     {
-        $user = $this->requireAuth();
+        $user       = $this->requireAuth();
         $this->verifyCsrf();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
 
         $ids    = array_filter(array_map('intval', (array) ($_POST['ids'] ?? [])));
         $action = trim((string) ($_POST['action'] ?? ''));
@@ -951,24 +1005,24 @@ class ContactsController extends Controller
 
         switch ($action) {
             case 'delete':
-                $count = Contact::bulkDelete($ids, $user['username']);
+                $count = Contact::bulkDelete($ids, $user['username'], $activeAbId);
                 $this->flash('success', "Deleted {$count} contact(s).");
                 break;
 
             case 'star':
-                Contact::bulkStar($ids, $user['username'], true);
+                Contact::bulkStar($ids, $user['username'], true, $activeAbId);
                 $this->flash('success', 'Starred ' . count($ids) . ' contact(s).');
                 break;
 
             case 'unstar':
-                Contact::bulkStar($ids, $user['username'], false);
+                Contact::bulkStar($ids, $user['username'], false, $activeAbId);
                 $this->flash('success', 'Unstarred ' . count($ids) . ' contact(s).');
                 break;
 
             case 'add_group':
                 $groupId = (int) ($_POST['group_id'] ?? 0);
                 if ($groupId > 0) {
-                    Contact::bulkAddGroup($ids, $user['username'], $groupId);
+                    Contact::bulkAddGroup($ids, $user['username'], $groupId, $activeAbId);
                     $this->flash('success', 'Added ' . count($ids) . ' contact(s) to group.');
                 } else {
                     $this->flash('error', 'Please select a group.');
@@ -1054,7 +1108,8 @@ class ContactsController extends Controller
     public function duplicates(): void
     {
         $user       = $this->requireAuth();
-        $duplicates = Contact::findDuplicates($user['username']);
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $duplicates = Contact::findDuplicates($user['username'], $activeAbId);
 
         $this->render('contacts/duplicates', [
             'user'       => $user,
@@ -1066,10 +1121,11 @@ class ContactsController extends Controller
 
     public function toggleIgnoreDuplicate(array $params): void
     {
-        $user = $this->requireAuth();
+        $user       = $this->requireAuth();
         $this->verifyCsrf();
-        $id = (int) ($params['id'] ?? 0);
-        Contact::toggleIgnoreDuplicate($id, $user['username']);
+        $id         = (int) ($params['id'] ?? 0);
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        Contact::toggleIgnoreDuplicate($id, $user['username'], $activeAbId);
         $this->flash('success', 'Duplicate flag updated.');
         $this->redirect('/contacts/duplicates');
     }
@@ -1080,12 +1136,13 @@ class ContactsController extends Controller
 
     public function mergeForm(array $params): void
     {
-        $user     = $this->requireAuth();
-        $keepId   = (int) ($params['id'] ?? 0);
-        $otherId  = (int) ($_GET['other'] ?? 0);
+        $user       = $this->requireAuth();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
+        $keepId     = (int) ($params['id'] ?? 0);
+        $otherId    = (int) ($_GET['other'] ?? 0);
 
-        $keep  = Contact::findById($keepId,  $user['username']);
-        $other = Contact::findById($otherId, $user['username']);
+        $keep  = Contact::findById($keepId,  $user['username'], $activeAbId);
+        $other = Contact::findById($otherId, $user['username'], $activeAbId);
 
         if (!$keep || !$other) {
             $this->abort(404, 'One or both contacts not found.');
@@ -1103,6 +1160,7 @@ class ContactsController extends Controller
     {
         $user    = $this->requireAuth();
         $this->verifyCsrf();
+        $activeAbId = $this->getActiveAddressBookId($user['username']);
 
         $keepId    = (int) ($params['id'] ?? 0);
         $discardId = (int) ($_POST['discard_id'] ?? 0);
@@ -1116,13 +1174,90 @@ class ContactsController extends Controller
         $data = $this->extractFormData();
 
         try {
-            $survivingId = Contact::mergeContacts($keepId, $discardId, $user['username'], $data);
+            $survivingId = Contact::mergeContacts($keepId, $discardId, $user['username'], $data, $activeAbId);
             $this->flash('success', 'Contacts merged successfully.');
             $this->redirect('/contacts/' . $survivingId);
         } catch (\Exception $e) {
             $this->flash('error', 'Merge failed: ' . $e->getMessage());
             $this->redirect('/contacts/duplicates');
         }
+    }
+
+    // -------------------------------------------------------
+    // Address-book management endpoints
+    // -------------------------------------------------------
+
+    public function switchAddressBook(array $params): void
+    {
+        $user = $this->requireAuth();
+        $this->verifyCsrf();
+        $id   = (int) $params['id'];
+        $books = Contact::getAllAddressBooksForUser($user['username']);
+        foreach ($books as $book) {
+            if ((int) $book['id'] === $id) {
+                $this->setActiveAddressBookId($user['username'], $id);
+                break;
+            }
+        }
+        $this->redirect('/contacts');
+    }
+
+    public function createAddressBookAction(): void
+    {
+        $user = $this->requireAuth();
+        $this->verifyCsrf();
+        $displayName = trim($_POST['displayname'] ?? '');
+        if ($displayName === '') {
+            $this->flash('error', 'Address book name is required.');
+            $this->redirect('/contacts');
+            return;
+        }
+        try {
+            $book = Contact::createAddressBook($user['username'], $displayName);
+            $this->setActiveAddressBookId($user['username'], (int) $book['id']);
+            $this->flash('success', 'Address book "' . htmlspecialchars($book['displayname']) . '" created. DAV URL: .../addressbooks/' . htmlspecialchars($user['username']) . '/' . htmlspecialchars($book['uri']) . '/');
+        } catch (\Exception $e) {
+            $this->flash('error', 'Failed to create address book: ' . $e->getMessage());
+        }
+        $this->redirect('/contacts');
+    }
+
+    public function renameAddressBookAction(array $params): void
+    {
+        $user        = $this->requireAuth();
+        $this->verifyCsrf();
+        $id          = (int) $params['id'];
+        $displayName = trim($_POST['displayname'] ?? '');
+        if ($displayName === '') {
+            $this->flash('error', 'Name cannot be empty.');
+            $this->redirect('/contacts');
+            return;
+        }
+        try {
+            Contact::renameAddressBook($id, $user['username'], $displayName);
+            $this->flash('success', 'Address book renamed.');
+        } catch (\Exception $e) {
+            $this->flash('error', 'Failed to rename: ' . $e->getMessage());
+        }
+        $this->redirect('/contacts');
+    }
+
+    public function deleteAddressBookAction(array $params): void
+    {
+        $user     = $this->requireAuth();
+        $this->verifyCsrf();
+        $id       = (int) $params['id'];
+        $activeId = $this->getActiveAddressBookId($user['username']);
+        try {
+            Contact::deleteAddressBook($id, $user['username']);
+            if ($activeId === $id) {
+                unset($_SESSION['active_ab_' . $user['username']]);
+            }
+            $this->flash('success', 'Address book deleted.');
+        } catch (\Exception $e) {
+            $this->flash('error', $e->getMessage());
+        }
+        $this->redirect('/contacts');
     }
 
     // -------------------------------------------------------

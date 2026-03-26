@@ -77,8 +77,11 @@ class Contact
     // Address-book helpers
     // -------------------------------------------------------
 
-    public static function getAddressBookId(string $username): ?int
+    public static function getAddressBookId(string $username, ?int $explicit = null): ?int
     {
+        if ($explicit !== null) {
+            return $explicit;
+        }
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare(
             "SELECT id FROM addressbooks WHERE principaluri = ? ORDER BY id LIMIT 1"
@@ -89,19 +92,122 @@ class Contact
     }
 
     // -------------------------------------------------------
+    // Address-book management
+    // -------------------------------------------------------
+
+    /**
+     * Converts a display name to a URL-safe slug (lowercase alphanumeric + hyphens).
+     */
+    public static function slugify(string $input): string
+    {
+        $slug = strtolower(trim($input));
+        $slug = preg_replace('/[\s_]+/', '-', $slug);
+        $slug = preg_replace('/[^a-z0-9\-]/', '', $slug);
+        $slug = preg_replace('/-+/', '-', $slug);
+        $slug = trim($slug, '-');
+        return $slug !== '' ? $slug : 'book';
+    }
+
+    private static function uniqueAddressBookSlug(string $username, string $baseSlug): string
+    {
+        $pdo  = Database::getInstance();
+        $slug = $baseSlug;
+        $i    = 2;
+        while (true) {
+            $stmt = $pdo->prepare('SELECT id FROM addressbooks WHERE principaluri = ? AND uri = ?');
+            $stmt->execute(["principals/{$username}", $slug]);
+            if (!$stmt->fetch()) {
+                break;
+            }
+            $slug = $baseSlug . '-' . $i++;
+        }
+        return $slug;
+    }
+
+    /**
+     * Returns all address books for a user with their contact count.
+     */
+    public static function getAllAddressBooksForUser(string $username): array
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare(
+            'SELECT ab.id, ab.uri, ab.displayname,
+                    (SELECT COUNT(*) FROM cards c WHERE c.addressbookid = ab.id) AS card_count
+             FROM addressbooks ab
+             WHERE ab.principaluri = ?
+             ORDER BY ab.id ASC'
+        );
+        $stmt->execute(["principals/{$username}"]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Create a new address book. The URL slug is generated from the display name
+     * and is immutable after creation. Returns the new book data.
+     */
+    public static function createAddressBook(string $username, string $displayName): array
+    {
+        $pdo         = Database::getInstance();
+        $displayName = trim($displayName) ?: 'New Address Book';
+        $baseSlug    = self::slugify($displayName);
+        $slug        = self::uniqueAddressBookSlug($username, $baseSlug);
+        $pdo->prepare(
+            'INSERT INTO addressbooks (principaluri, displayname, uri, description, synctoken) VALUES (?, ?, ?, ?, 1)'
+        )->execute(["principals/{$username}", $displayName, $slug, '']);
+        return [
+            'id'          => (int) $pdo->lastInsertId(),
+            'uri'         => $slug,
+            'displayname' => $displayName,
+        ];
+    }
+
+    /**
+     * Rename the display name of an address book. The URI/slug is never changed.
+     */
+    public static function renameAddressBook(int $id, string $username, string $newName): void
+    {
+        $pdo     = Database::getInstance();
+        $newName = trim($newName) ?: 'Address Book';
+        $pdo->prepare(
+            'UPDATE addressbooks SET displayname = ? WHERE id = ? AND principaluri = ?'
+        )->execute([$newName, $id, "principals/{$username}"]);
+    }
+
+    /**
+     * Delete an address book and all its contacts. Throws if it's the user's last one.
+     */
+    public static function deleteAddressBook(int $id, string $username): void
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM addressbooks WHERE principaluri = ?');
+        $stmt->execute(["principals/{$username}"]);
+        if ((int) $stmt->fetchColumn() <= 1) {
+            throw new \RuntimeException('Cannot delete the only address book.');
+        }
+        $stmt = $pdo->prepare('SELECT id FROM addressbooks WHERE id = ? AND principaluri = ?');
+        $stmt->execute([$id, "principals/{$username}"]);
+        if (!$stmt->fetch()) {
+            throw new \RuntimeException('Address book not found.');
+        }
+        // ON DELETE CASCADE cleans up cards, contact_groups, contact_group_members
+        $pdo->prepare('DELETE FROM addressbooks WHERE id = ?')->execute([$id]);
+    }
+
+    // -------------------------------------------------------
     // List / fetch
     // -------------------------------------------------------
 
     public static function allForUser(
         string $username,
-        string $search      = '',
-        string $sort        = 'default',
-        string $groupFilter = '',
-        bool   $starredOnly = false
+        string $search        = '',
+        string $sort          = 'default',
+        string $groupFilter   = '',
+        bool   $starredOnly   = false,
+        ?int   $addressBookId = null
     ): array {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return [];
         }
@@ -244,11 +350,11 @@ class Contact
         return $contacts;
     }
 
-    public static function findById(int $id, string $username): ?array
+    public static function findById(int $id, string $username, ?int $addressBookId = null): ?array
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return null;
         }
@@ -806,9 +912,9 @@ class Contact
         return $cardId;
     }
 
-    public static function importVCardData(string $username, string $rawData): array
+    public static function importVCardData(string $username, string $rawData, ?int $addressBookId = null): array
     {
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             throw new \RuntimeException('No address book found for user.');
         }
@@ -845,11 +951,11 @@ class Contact
         ];
     }
 
-    public static function create(string $username, array $data): int
+    public static function create(string $username, array $data, ?int $addressBookId = null): int
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             throw new \RuntimeException('No address book found for user.');
         }
@@ -883,11 +989,11 @@ class Contact
         return $cardId;
     }
 
-    public static function update(int $id, string $username, array $data): void
+    public static function update(int $id, string $username, array $data, ?int $addressBookId = null): void
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return;
         }
@@ -936,11 +1042,11 @@ class Contact
         self::recordHistory((int) $row['id'], 'updated', $fn);
     }
 
-    public static function delete(int $id, string $username): void
+    public static function delete(int $id, string $username, ?int $addressBookId = null): void
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return;
         }
@@ -962,16 +1068,22 @@ class Contact
         self::bumpSyncToken($abId, $row['uri'], 3);
     }
 
-    public static function countForUser(string $username): int
+    public static function countForUser(string $username, ?int $addressBookId = null): int
     {
         self::ensureLocalIdColumn();
-        $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
-        if (!$abId) {
-            return 0;
+        $pdo = Database::getInstance();
+        if ($addressBookId !== null) {
+            $stmt = $pdo->prepare('SELECT COUNT(*) FROM cards WHERE addressbookid = ?');
+            $stmt->execute([$addressBookId]);
+        } else {
+            // Count across all address books for this user
+            $stmt = $pdo->prepare(
+                'SELECT COUNT(*) FROM cards c
+                 JOIN addressbooks ab ON c.addressbookid = ab.id
+                 WHERE ab.principaluri = ?'
+            );
+            $stmt->execute(["principals/{$username}"]);
         }
-        $stmt = $pdo->prepare('SELECT COUNT(*) FROM cards WHERE addressbookid = ?');
-        $stmt->execute([$abId]);
         return (int) $stmt->fetchColumn();
     }
 
@@ -982,10 +1094,10 @@ class Contact
     /**
      * Export all contacts for a user as a single multi-vCard (.vcf) blob.
      */
-    public static function exportAllVCards(string $username): string
+    public static function exportAllVCards(string $username, ?int $addressBookId = null): string
     {
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return '';
         }
@@ -1004,9 +1116,9 @@ class Contact
     /**
      * Export all contacts for a user as a CSV string.
      */
-    public static function exportAllCsv(string $username): string
+    public static function exportAllCsv(string $username, ?int $addressBookId = null): string
     {
-        $contacts = self::allForUser($username);
+        $contacts = self::allForUser($username, addressBookId: $addressBookId);
 
         $stream = fopen('php://temp', 'r+');
 
@@ -1107,9 +1219,9 @@ class Contact
     /**
      * Export all contacts in Google Contacts CSV import format.
      */
-    public static function exportGoogleCsv(string $username): string
+    public static function exportGoogleCsv(string $username, ?int $addressBookId = null): string
     {
-        $contacts = self::allForUser($username);
+        $contacts = self::allForUser($username, addressBookId: $addressBookId);
         $stream   = fopen('php://temp', 'r+');
 
         fputcsv($stream, [
@@ -1184,9 +1296,9 @@ class Contact
     /**
      * Export all contacts in Outlook CSV import format.
      */
-    public static function exportOutlookCsv(string $username): string
+    public static function exportOutlookCsv(string $username, ?int $addressBookId = null): string
     {
-        $contacts = self::allForUser($username);
+        $contacts = self::allForUser($username, addressBookId: $addressBookId);
         $stream   = fopen('php://temp', 'r+');
 
         fputcsv($stream, [
@@ -1330,11 +1442,11 @@ class Contact
     /**
      * Toggle the starred state of a contact. Returns the new starred state.
      */
-    public static function toggleStar(int $id, string $username): bool
+    public static function toggleStar(int $id, string $username, ?int $addressBookId = null): bool
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return false;
         }
@@ -1384,11 +1496,11 @@ class Contact
     // Groups
     // -------------------------------------------------------
 
-    public static function getAllGroups(string $username): array
+    public static function getAllGroups(string $username, ?int $addressBookId = null): array
     {
         self::ensureGroupTables();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return [];
         }
@@ -1399,11 +1511,11 @@ class Contact
         return $stmt->fetchAll() ?: [];
     }
 
-    public static function createGroup(string $username, string $name, string $color = ''): int
+    public static function createGroup(string $username, string $name, string $color = '', ?int $addressBookId = null): int
     {
         self::ensureGroupTables();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             throw new \RuntimeException('No address book found.');
         }
@@ -1424,11 +1536,11 @@ class Contact
         }
     }
 
-    public static function updateGroup(int $groupId, string $username, string $name, string $color = ''): void
+    public static function updateGroup(int $groupId, string $username, string $name, string $color = '', ?int $addressBookId = null): void
     {
         self::ensureGroupTables();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return;
         }
@@ -1441,11 +1553,11 @@ class Contact
             ->execute([$name, $color, $groupId, $abId]);
     }
 
-    public static function deleteGroup(int $groupId, string $username): void
+    public static function deleteGroup(int $groupId, string $username, ?int $addressBookId = null): void
     {
         self::ensureGroupTables();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return;
         }
@@ -1512,9 +1624,9 @@ class Contact
      * Find potential duplicate contacts. Returns groups of contacts that share a name,
      * email address, or phone number (contacts flagged as ignore-duplicate are excluded).
      */
-    public static function findDuplicates(string $username): array
+    public static function findDuplicates(string $username, ?int $addressBookId = null): array
     {
-        $contacts = self::allForUser($username);
+        $contacts = self::allForUser($username, addressBookId: $addressBookId);
         $byName   = [];
         $byEmail  = [];
         $byPhone  = [];
@@ -1574,11 +1686,11 @@ class Contact
     /**
      * Toggle the ignore-duplicate flag on a contact. Returns the new flag state.
      */
-    public static function toggleIgnoreDuplicate(int $id, string $username): bool
+    public static function toggleIgnoreDuplicate(int $id, string $username, ?int $addressBookId = null): bool
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return false;
         }
@@ -1629,14 +1741,14 @@ class Contact
      * memberships from the "discard" contact, then delete the discard contact.
      * Returns the local_id of the surviving contact.
      */
-    public static function mergeContacts(int $keepId, int $discardId, string $username, array $mergedData): int
+    public static function mergeContacts(int $keepId, int $discardId, string $username, array $mergedData, ?int $addressBookId = null): int
     {
         self::ensureLocalIdColumn();
         self::ensureGroupTables();
         self::ensureHistoryTable();
 
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             throw new \RuntimeException('No address book found.');
         }
@@ -1708,9 +1820,9 @@ class Contact
     /**
      * Returns contacts with a birthday in the next $days days, in ascending order.
      */
-    public static function getUpcomingBirthdays(string $username, int $days = 30): array
+    public static function getUpcomingBirthdays(string $username, int $days = 30, ?int $addressBookId = null): array
     {
-        $contacts = self::allForUser($username);
+        $contacts = self::allForUser($username, addressBookId: $addressBookId);
         $now      = new \DateTime('today');
         $results  = [];
 
@@ -1770,13 +1882,13 @@ class Contact
     /**
      * Delete multiple contacts by local ID. Returns count of deleted contacts.
      */
-    public static function bulkDelete(array $ids, string $username): int
+    public static function bulkDelete(array $ids, string $username, ?int $addressBookId = null): int
     {
         $deleted = 0;
         foreach ($ids as $id) {
             $id = (int) $id;
             if ($id > 0) {
-                self::delete($id, $username);
+                self::delete($id, $username, $addressBookId);
                 $deleted++;
             }
         }
@@ -1786,11 +1898,11 @@ class Contact
     /**
      * Set the starred state on multiple contacts by local ID.
      */
-    public static function bulkStar(array $ids, string $username, bool $starred): void
+    public static function bulkStar(array $ids, string $username, bool $starred, ?int $addressBookId = null): void
     {
         self::ensureLocalIdColumn();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return;
         }
@@ -1845,12 +1957,12 @@ class Contact
     /**
      * Assign a group to multiple contacts by local ID.
      */
-    public static function bulkAddGroup(array $ids, string $username, int $groupId): void
+    public static function bulkAddGroup(array $ids, string $username, int $groupId, ?int $addressBookId = null): void
     {
         self::ensureLocalIdColumn();
         self::ensureGroupTables();
         $pdo  = Database::getInstance();
-        $abId = self::getAddressBookId($username);
+        $abId = self::getAddressBookId($username, $addressBookId);
         if (!$abId) {
             return;
         }

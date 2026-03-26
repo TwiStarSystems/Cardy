@@ -82,8 +82,8 @@ if (!function_exists('navActive')) {
 <?= $content ?? '' ?>
 </main>
 
-<footer style="text-align:center;padding:var(--spacing-md);color:var(--color-muted);font-size:var(--text-xs);border-top:1px solid var(--color-border);">
-  <?= $_ctrl->e($appName) ?> &mdash; CardDAV &amp; CalDAV Server
+<footer class="app-footer">
+    <p>Made By TwiStarSystems © All Rights Reserved</p>
 </footer>
 
 </body>

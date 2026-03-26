@@ -7,13 +7,13 @@
 
 ---
 
-# Overall Complete Percentage: 80%
+# Overall Complete Percentage: 81%
 
 ## Summary 
 
 |   Area   |   Completed   |   Remaining   |   Completion   |
 |----------|---------------|---------------|----------------|
-| Core Features | 18 | 4 | 82% |
+| Core Features | 19 | 3 | 86% |
 | Contacts | 33 | 2 | 94% |
 | Calendar | 6 | 9 | 40% |
 | Admin Panel | 5 | 6 | 45% |
@@ -46,10 +46,8 @@
 [X] - Nginx configuration files
 [X] - CLI tool (cardy-ctl) for user management
 [X] - Dashboard with stats and upcoming events
-[ ] - API endpoints for programmatic access
-[ ] - Webhooks/notifications system
-[ ] - Plugin/extension system
-[ ] - Multi-tenancy support
+[X] - Support for multiple addressbooks and calendars per user
+[ ] - DAV access logs
 
 ---
 
@@ -131,6 +129,8 @@
 [ ] - Event status (confirmed/tentative/cancelled)
 [ ] - Attendees/participants with RSVP status
 [ ] - Organizer field for events
+[ ] - Contact linking for attendees/organizer
+[ ] - Contact birthday/anniversary automatic calendar events
 
 ## Event Details ##
 [X] - Summary/title
@@ -139,6 +139,10 @@
 [X] - Start date/time
 [X] - End date/time
 [X] - Timezone (UTC default)
+[ ] - All-day event toggle
+[ ] - Event location field
+[ ] - Event description field
+[ ] - Event categories/tags
 [ ] - Event color/category
 [ ] - Event visibility (public/private)
 [ ] - Event status (confirmed/tentative/cancelled)
@@ -169,6 +173,10 @@
 [ ] - Task dependencies (subtasks)
 [ ] - Task progress tracking
 [ ] - Task assignment to other users
+[ ] - Task history/activity log
+[ ] - Task export to CSV/vCard
+[ ] - Task import from CSV/vCard
+[ ] - Task synchronization with external task managers (Google Tasks, etc.)
 
 ---
 

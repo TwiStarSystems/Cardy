@@ -17,8 +17,11 @@ class CalendarEvent
     // Calendar helpers
     // -------------------------------------------------------
 
-    public static function getCalendarId(string $username): ?int
+    public static function getCalendarId(string $username, ?int $explicit = null): ?int
     {
+        if ($explicit !== null) {
+            return $explicit;
+        }
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare(
             "SELECT calendarid FROM calendarinstances WHERE principaluri = ? ORDER BY id LIMIT 1"
@@ -32,21 +35,133 @@ class CalendarEvent
     {
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare(
-            'SELECT ci.id, ci.calendarid, ci.displayname, ci.calendarcolor, ci.description
-             FROM calendarinstances ci WHERE ci.principaluri = ? ORDER BY ci.id'
+            'SELECT ci.calendarid, ci.displayname, ci.calendarcolor, ci.description, ci.uri
+             FROM calendarinstances ci WHERE ci.principaluri = ? ORDER BY ci.calendarid ASC'
         );
         $stmt->execute(["principals/{$username}"]);
         return $stmt->fetchAll();
     }
 
     // -------------------------------------------------------
+    // Calendar management
+    // -------------------------------------------------------
+
+    /**
+     * Converts a display name to a URL-safe slug (lowercase alphanumeric + hyphens).
+     */
+    public static function slugify(string $input): string
+    {
+        $slug = strtolower(trim($input));
+        $slug = preg_replace('/[\s_]+/', '-', $slug);
+        $slug = preg_replace('/[^a-z0-9\-]/', '', $slug);
+        $slug = preg_replace('/-+/', '-', $slug);
+        $slug = trim($slug, '-');
+        return $slug !== '' ? $slug : 'calendar';
+    }
+
+    private static function uniqueCalendarSlug(string $username, string $baseSlug): string
+    {
+        $pdo  = Database::getInstance();
+        $slug = $baseSlug;
+        $i    = 2;
+        while (true) {
+            $stmt = $pdo->prepare('SELECT calendarid FROM calendarinstances WHERE principaluri = ? AND uri = ?');
+            $stmt->execute(["principals/{$username}", $slug]);
+            if (!$stmt->fetch()) {
+                break;
+            }
+            $slug = $baseSlug . '-' . $i++;
+        }
+        return $slug;
+    }
+
+    /**
+     * Create a new calendar for a user. The URL slug is generated from the display name
+     * and is immutable after creation. Returns calendarid, uri, displayname, calendarcolor.
+     */
+    public static function createCalendar(string $username, string $displayName, string $color = '#9600E1'): array
+    {
+        $pdo         = Database::getInstance();
+        $displayName = trim($displayName) ?: 'New Calendar';
+        $baseSlug    = self::slugify($displayName);
+        $slug        = self::uniqueCalendarSlug($username, $baseSlug);
+        $color       = preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? $color : '#9600E1';
+
+        $pdo->prepare('INSERT INTO calendars (synctoken, components) VALUES (1, ?)')->execute(['VEVENT,VTODO,VJOURNAL']);
+        $calendarId = (int) $pdo->lastInsertId();
+
+        $pdo->prepare(
+            'INSERT INTO calendarinstances (calendarid, principaluri, access, displayname, uri, description, calendarcolor, timezone)
+             VALUES (?, ?, 1, ?, ?, ?, ?, ?)'
+        )->execute([$calendarId, "principals/{$username}", $displayName, $slug, '', $color, 'UTC']);
+
+        return [
+            'calendarid'    => $calendarId,
+            'uri'           => $slug,
+            'displayname'   => $displayName,
+            'calendarcolor' => $color,
+        ];
+    }
+
+    /**
+     * Rename a calendar's display name and/or color. The URI/slug is never changed.
+     */
+    public static function renameCalendar(int $calendarId, string $username, string $newName, string $newColor = ''): void
+    {
+        $pdo      = Database::getInstance();
+        $newName  = trim($newName) ?: 'Calendar';
+        $newColor = preg_match('/^#[0-9a-fA-F]{6}$/', $newColor) ? $newColor : '#9600E1';
+        $pdo->prepare(
+            'UPDATE calendarinstances SET displayname = ?, calendarcolor = ? WHERE calendarid = ? AND principaluri = ?'
+        )->execute([$newName, $newColor, $calendarId, "principals/{$username}"]);
+    }
+
+    /**
+     * Delete a calendar and all its events. Throws if it's the user's last calendar.
+     */
+    public static function deleteCalendar(int $calendarId, string $username): void
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM calendarinstances WHERE principaluri = ?');
+        $stmt->execute(["principals/{$username}"]);
+        if ((int) $stmt->fetchColumn() <= 1) {
+            throw new \RuntimeException('Cannot delete the only calendar.');
+        }
+        $stmt = $pdo->prepare('SELECT calendarid FROM calendarinstances WHERE calendarid = ? AND principaluri = ?');
+        $stmt->execute([$calendarId, "principals/{$username}"]);
+        if (!$stmt->fetch()) {
+            throw new \RuntimeException('Calendar not found.');
+        }
+        // Delete events, instances, and the base calendar (CASCADE handles calendarchanges)
+        $pdo->prepare('DELETE FROM calendarobjects WHERE calendarid = ?')->execute([$calendarId]);
+        $pdo->prepare('DELETE FROM calendarinstances WHERE calendarid = ?')->execute([$calendarId]);
+        $pdo->prepare('DELETE FROM calendars WHERE id = ?')->execute([$calendarId]);
+    }
+
+    // -------------------------------------------------------
+    // Count across all calendars
+    // -------------------------------------------------------
+
+    public static function countUpcomingForAllCalendars(string $username): int
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM calendarobjects co
+             JOIN calendarinstances ci ON co.calendarid = ci.calendarid
+             WHERE ci.principaluri = ? AND co.firstoccurence >= ? AND co.componenttype = ?'
+        );
+        $stmt->execute(["principals/{$username}", time(), 'VEVENT']);
+        return (int) $stmt->fetchColumn();
+    }
+
+    // -------------------------------------------------------
     // List / fetch
     // -------------------------------------------------------
 
-    public static function allForUser(string $username, ?int $year = null, ?int $month = null): array
+    public static function allForUser(string $username, ?int $year = null, ?int $month = null, ?int $calendarId = null): array
     {
         $pdo   = Database::getInstance();
-        $calId = self::getCalendarId($username);
+        $calId = self::getCalendarId($username, $calendarId);
         if (!$calId) {
             return [];
         }
@@ -74,10 +189,10 @@ class CalendarEvent
         return $events;
     }
 
-    public static function findById(int $id, string $username): ?array
+    public static function findById(int $id, string $username, ?int $calendarId = null): ?array
     {
         $pdo   = Database::getInstance();
-        $calId = self::getCalendarId($username);
+        $calId = self::getCalendarId($username, $calendarId);
         if (!$calId) {
             return null;
         }
@@ -92,10 +207,10 @@ class CalendarEvent
         return array_merge(['id' => $row['id'], 'uri' => $row['uri']], self::parseICal($row['calendardata']));
     }
 
-    public static function countUpcomingForUser(string $username): int
+    public static function countUpcomingForUser(string $username, ?int $calendarId = null): int
     {
         $pdo   = Database::getInstance();
-        $calId = self::getCalendarId($username);
+        $calId = self::getCalendarId($username, $calendarId);
         if (!$calId) {
             return 0;
         }
@@ -217,10 +332,10 @@ class CalendarEvent
     // Write
     // -------------------------------------------------------
 
-    public static function create(string $username, array $data): int
+    public static function create(string $username, array $data, ?int $calendarId = null): int
     {
         $pdo   = Database::getInstance();
-        $calId = self::getCalendarId($username);
+        $calId = self::getCalendarId($username, $calendarId);
         if (!$calId) {
             throw new \RuntimeException('No calendar found for user.');
         }
@@ -246,10 +361,10 @@ class CalendarEvent
         return $objId;
     }
 
-    public static function update(int $id, string $username, array $data): void
+    public static function update(int $id, string $username, array $data, ?int $calendarId = null): void
     {
         $pdo   = Database::getInstance();
-        $calId = self::getCalendarId($username);
+        $calId = self::getCalendarId($username, $calendarId);
         if (!$calId) {
             return;
         }
@@ -280,10 +395,10 @@ class CalendarEvent
         self::bumpSyncToken($calId, $row['uri'], 2);
     }
 
-    public static function delete(int $id, string $username): void
+    public static function delete(int $id, string $username, ?int $calendarId = null): void
     {
         $pdo   = Database::getInstance();
-        $calId = self::getCalendarId($username);
+        $calId = self::getCalendarId($username, $calendarId);
         if (!$calId) {
             return;
         }
