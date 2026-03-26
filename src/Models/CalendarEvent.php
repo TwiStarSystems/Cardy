@@ -114,6 +114,8 @@ class CalendarEvent
         $pdo->prepare(
             'UPDATE calendarinstances SET displayname = ?, calendarcolor = ? WHERE calendarid = ? AND principaluri = ?'
         )->execute([$newName, $newColor, $calendarId, "principals/{$username}"]);
+        // Bump the calendar synctoken so DAV clients (e.g. DAVx5) re-fetch properties.
+        $pdo->prepare('UPDATE calendars SET synctoken = synctoken + 1 WHERE id = ?')->execute([$calendarId]);
     }
 
     /**

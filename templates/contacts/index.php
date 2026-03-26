@@ -346,6 +346,7 @@ $renderCard = function(array $c, string $type) use ($_ctrl, $csrf): void {
     var menu = document.getElementById(menuId);
     if (!btn || !menu) { return; }
     btn.addEventListener('click', function (e) { e.stopPropagation(); menu.classList.toggle('show'); });
+    menu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', function () { menu.classList.remove('show'); });
   }
   initDropdown('contacts-actions-btn', 'contacts-actions-menu');

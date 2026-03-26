@@ -223,6 +223,7 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       e.stopPropagation();
       menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
     });
+    menu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', function () { menu.style.display = 'none'; });
   }
   function togglePanel(panelId) {

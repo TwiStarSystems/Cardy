@@ -169,7 +169,7 @@ class Contact
         $pdo     = Database::getInstance();
         $newName = trim($newName) ?: 'Address Book';
         $pdo->prepare(
-            'UPDATE addressbooks SET displayname = ? WHERE id = ? AND principaluri = ?'
+            'UPDATE addressbooks SET displayname = ?, synctoken = synctoken + 1 WHERE id = ? AND principaluri = ?'
         )->execute([$newName, $id, "principals/{$username}"]);
     }
 
