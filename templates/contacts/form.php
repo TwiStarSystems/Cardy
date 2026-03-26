@@ -199,16 +199,145 @@ $c       = $contact ?? [];
 
   <!-- Other -->
   <div class="form-section-title">Other</div>
-  <div class="form-group">
-    <label class="form-label" for="birthday">Birthday</label>
-    <input class="form-control" type="date" id="birthday" name="birthday"
-           value="<?= $_ctrl->e($c['birthday'] ?? '') ?>">
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label" for="nickname">Nickname</label>
+      <input class="form-control" type="text" id="nickname" name="nickname"
+             value="<?= $_ctrl->e($c['nickname'] ?? '') ?>" placeholder="Johnny">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="birthday">Birthday</label>
+      <input class="form-control" type="date" id="birthday" name="birthday"
+             value="<?= $_ctrl->e($c['birthday'] ?? '') ?>">
+    </div>
   </div>
+
+  <!-- Websites -->
+  <div class="form-section-title">Websites</div>
+  <div id="url-list">
+    <?php foreach (($c['urls'] ?? []) as $u): ?>
+    <div class="form-row url-row">
+      <div class="form-group" style="flex:2">
+        <label class="form-label">URL</label>
+        <input class="form-control" type="url" name="url[]"
+               value="<?= $_ctrl->e($u['value'] ?? '') ?>" placeholder="https://example.com">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Type</label>
+        <select class="form-control" name="url_type[]">
+          <?php foreach (['', 'home', 'work', 'other'] as $t): ?>
+          <option value="<?= $t ?>" <?= ($u['type'] ?? '') === $t ? 'selected' : '' ?>><?= $t === '' ? 'Web' : ucfirst($t) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="form-group" style="max-width:140px;align-self:flex-end;">
+        <button type="button" class="btn btn-ghost remove-url">Remove</button>
+      </div>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <button type="button" id="add-url" class="btn btn-secondary btn-sm">Add Website</button>
+
+  <!-- Social Profiles -->
+  <div class="form-section-title">Social Profiles</div>
+  <div id="social-list">
+    <?php foreach (($c['social_profiles'] ?? []) as $sp): ?>
+    <div class="form-row social-row">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Network</label>
+        <select class="form-control" name="social_type[]">
+          <?php foreach (['twitter', 'linkedin', 'instagram', 'facebook', 'github', 'youtube', 'mastodon', 'other'] as $t): ?>
+          <option value="<?= $t ?>" <?= ($sp['type'] ?? 'other') === $t ? 'selected' : '' ?>><?= ucfirst($t === 'twitter' ? 'X / Twitter' : $t) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="form-group" style="flex:2">
+        <label class="form-label">Username / URL</label>
+        <input class="form-control" type="text" name="social_value[]"
+               value="<?= $_ctrl->e($sp['value'] ?? '') ?>" placeholder="@handle or https://…">
+      </div>
+      <div class="form-group" style="max-width:140px;align-self:flex-end;">
+        <button type="button" class="btn btn-ghost remove-social">Remove</button>
+      </div>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <button type="button" id="add-social" class="btn btn-secondary btn-sm">Add Social Profile</button>
+
+  <!-- Anniversaries -->
+  <div class="form-section-title">Anniversaries</div>
+  <div id="anniversary-list">
+    <?php foreach (($c['anniversaries'] ?? []) as $ann): ?>
+    <div class="form-row anniversary-row">
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input class="form-control" type="date" name="anniversary[]"
+               value="<?= $_ctrl->e($ann) ?>">
+      </div>
+      <div class="form-group" style="max-width:140px;align-self:flex-end;">
+        <button type="button" class="btn btn-ghost remove-anniversary">Remove</button>
+      </div>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <button type="button" id="add-anniversary" class="btn btn-secondary btn-sm">Add Anniversary</button>
+
+  <!-- Custom Fields -->
+  <div class="form-section-title">Custom Fields</div>
+  <div id="custom-list">
+    <?php foreach (($c['custom_fields'] ?? []) as $cf): ?>
+    <div class="form-row custom-row">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Label</label>
+        <input class="form-control" type="text" name="custom_label[]"
+               value="<?= $_ctrl->e($cf['label'] ?? '') ?>" placeholder="Field name">
+      </div>
+      <div class="form-group" style="flex:2">
+        <label class="form-label">Value</label>
+        <input class="form-control" type="text" name="custom_value[]"
+               value="<?= $_ctrl->e($cf['value'] ?? '') ?>" placeholder="Value">
+      </div>
+      <div class="form-group" style="max-width:140px;align-self:flex-end;">
+        <button type="button" class="btn btn-ghost remove-custom">Remove</button>
+      </div>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <button type="button" id="add-custom" class="btn btn-secondary btn-sm">Add Custom Field</button>
+
+  <!-- Notes -->
+  <div class="form-section-title" style="margin-top:var(--spacing-md)">Notes</div>
   <div class="form-group">
     <label class="form-label" for="note">Notes</label>
     <textarea class="form-control" id="note" name="note" rows="3"
               placeholder="Additional notes…"><?= $_ctrl->e($c['note'] ?? '') ?></textarea>
   </div>
+
+  <!-- Starred & Groups -->
+  <div class="form-section-title" id="groups" style="margin-top:var(--spacing-md)">Starred &amp; Groups</div>
+  <div class="form-group">
+    <label class="flex align-center gap-sm" style="cursor:pointer">
+      <input type="checkbox" name="is_starred" value="1" <?= !empty($c['is_starred']) ? 'checked' : '' ?> style="width:18px;height:18px;accent-color:var(--color-sparkle-purple)">
+      <span>★ Starred — pin this contact to your starred view</span>
+    </label>
+  </div>
+  <?php if (!empty($allGroups)): ?>
+  <div class="form-group">
+    <label class="form-label">Groups / Labels</label>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">
+      <?php foreach ($allGroups as $g): ?>
+      <?php $checked = in_array((int) $g['id'], array_column($c['groups'] ?? [], 'id'), true); ?>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:var(--text-sm)">
+        <input type="checkbox" name="groups[]" value="<?= (int) $g['id'] ?>" <?= $checked ? 'checked' : '' ?> style="accent-color:<?= $_ctrl->e($g['color'] ?: '#7c3aed') ?>">
+        <span class="badge" style="background:<?= $_ctrl->e($g['color'] ?: 'var(--color-sparkle-purple)') ?>;color:#fff;pointer-events:none"><?= $_ctrl->e($g['name']) ?></span>
+      </label>
+      <?php endforeach; ?>
+    </div>
+    <div class="form-hint">
+      <a href="/contacts/groups" target="_blank">Manage groups</a>
+    </div>
+  </div>
+  <?php endif; ?>
 
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">
@@ -227,6 +356,80 @@ $c       = $contact ?? [];
   </div>
 </form>
 </div>
+
+<template id="url-row-template">
+  <div class="form-row url-row">
+    <div class="form-group" style="flex:2">
+      <label class="form-label">URL</label>
+      <input class="form-control" type="url" name="url[]" placeholder="https://example.com">
+    </div>
+    <div class="form-group" style="flex:1">
+      <label class="form-label">Type</label>
+      <select class="form-control" name="url_type[]">
+        <option value="">Web</option>
+        <option value="home">Home</option>
+        <option value="work">Work</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group" style="max-width:140px;align-self:flex-end;">
+      <button type="button" class="btn btn-ghost remove-url">Remove</button>
+    </div>
+  </div>
+</template>
+
+<template id="social-row-template">
+  <div class="form-row social-row">
+    <div class="form-group" style="flex:1">
+      <label class="form-label">Network</label>
+      <select class="form-control" name="social_type[]">
+        <option value="twitter">X / Twitter</option>
+        <option value="linkedin">Linkedin</option>
+        <option value="instagram">Instagram</option>
+        <option value="facebook">Facebook</option>
+        <option value="github">Github</option>
+        <option value="youtube">Youtube</option>
+        <option value="mastodon">Mastodon</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:2">
+      <label class="form-label">Username / URL</label>
+      <input class="form-control" type="text" name="social_value[]" placeholder="@handle or https://…">
+    </div>
+    <div class="form-group" style="max-width:140px;align-self:flex-end;">
+      <button type="button" class="btn btn-ghost remove-social">Remove</button>
+    </div>
+  </div>
+</template>
+
+<template id="anniversary-row-template">
+  <div class="form-row anniversary-row">
+    <div class="form-group">
+      <label class="form-label">Date</label>
+      <input class="form-control" type="date" name="anniversary[]">
+    </div>
+    <div class="form-group" style="max-width:140px;align-self:flex-end;">
+      <button type="button" class="btn btn-ghost remove-anniversary">Remove</button>
+    </div>
+  </div>
+</template>
+
+<template id="custom-row-template">
+  <div class="form-row custom-row">
+    <div class="form-group" style="flex:1">
+      <label class="form-label">Label</label>
+      <input class="form-control" type="text" name="custom_label[]" placeholder="Field name">
+    </div>
+    <div class="form-group" style="flex:2">
+      <label class="form-label">Value</label>
+      <input class="form-control" type="text" name="custom_value[]" placeholder="Value">
+    </div>
+    <div class="form-group" style="max-width:140px;align-self:flex-end;">
+      <button type="button" class="btn btn-ghost remove-custom">Remove</button>
+    </div>
+  </div>
+</template>
 
 <template id="email-row-template">
   <div class="form-row email-row">
@@ -278,12 +481,36 @@ $c       = $contact ?? [];
 
   const emailList = document.getElementById('email-list');
   const phoneList = document.getElementById('phone-list');
-  const addEmailBtn = document.getElementById('add-email');
-  const addPhoneBtn = document.getElementById('add-phone');
+  const urlList   = document.getElementById('url-list');
+  const socialList = document.getElementById('social-list');
+  const anniversaryList = document.getElementById('anniversary-list');
+  const customList = document.getElementById('custom-list');
+
+  const addEmailBtn       = document.getElementById('add-email');
+  const addPhoneBtn       = document.getElementById('add-phone');
+  const addUrlBtn         = document.getElementById('add-url');
+  const addSocialBtn      = document.getElementById('add-social');
+  const addAnniversaryBtn = document.getElementById('add-anniversary');
+  const addCustomBtn      = document.getElementById('add-custom');
+
   const emailCounter = document.getElementById('email-counter');
   const phoneCounter = document.getElementById('phone-counter');
-  const emailTpl = document.getElementById('email-row-template');
-  const phoneTpl = document.getElementById('phone-row-template');
+
+  const emailTpl       = document.getElementById('email-row-template');
+  const phoneTpl       = document.getElementById('phone-row-template');
+  const urlTpl         = document.getElementById('url-row-template');
+  const socialTpl      = document.getElementById('social-row-template');
+  const anniversaryTpl = document.getElementById('anniversary-row-template');
+  const customTpl      = document.getElementById('custom-row-template');
+
+  function addRow(list, tpl) {
+    list.appendChild(tpl.content.firstElementChild.cloneNode(true));
+  }
+
+  function removeRow(list, selector, btn) {
+    const row = btn.closest(selector);
+    if (row) { row.remove(); }
+  }
 
   const updateButtonState = () => {
     const emailCount = emailList.querySelectorAll('.email-row').length;
@@ -296,15 +523,20 @@ $c       = $contact ?? [];
 
   addEmailBtn.addEventListener('click', () => {
     if (emailList.querySelectorAll('.email-row').length >= MAX_ENTRIES) return;
-    emailList.appendChild(emailTpl.content.firstElementChild.cloneNode(true));
+    addRow(emailList, emailTpl);
     updateButtonState();
   });
 
   addPhoneBtn.addEventListener('click', () => {
     if (phoneList.querySelectorAll('.phone-row').length >= MAX_ENTRIES) return;
-    phoneList.appendChild(phoneTpl.content.firstElementChild.cloneNode(true));
+    addRow(phoneList, phoneTpl);
     updateButtonState();
   });
+
+  addUrlBtn.addEventListener('click', () => addRow(urlList, urlTpl));
+  addSocialBtn.addEventListener('click', () => addRow(socialList, socialTpl));
+  addAnniversaryBtn.addEventListener('click', () => addRow(anniversaryList, anniversaryTpl));
+  addCustomBtn.addEventListener('click', () => addRow(customList, customTpl));
 
   emailList.addEventListener('click', (event) => {
     if (!event.target.classList.contains('remove-email')) return;
@@ -320,6 +552,19 @@ $c       = $contact ?? [];
     if (rows.length <= 1) return;
     event.target.closest('.phone-row')?.remove();
     updateButtonState();
+  });
+
+  urlList.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-url')) removeRow(urlList, '.url-row', e.target);
+  });
+  socialList.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-social')) removeRow(socialList, '.social-row', e.target);
+  });
+  anniversaryList.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-anniversary')) removeRow(anniversaryList, '.anniversary-row', e.target);
+  });
+  customList.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-custom')) removeRow(customList, '.custom-row', e.target);
   });
 
   updateButtonState();

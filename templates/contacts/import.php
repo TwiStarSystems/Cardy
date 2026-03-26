@@ -7,7 +7,7 @@ ob_start();
   <div>
     <a href="/contacts" class="text-muted text-sm">← Contacts</a>
     <h1 class="page-title" style="margin-top:4px">Import Contacts</h1>
-    <p class="page-subtitle">Import single or bulk contacts from CSV or vCard (.vcf)</p>
+    <p class="page-subtitle">Import contacts from CSV or vCard — Cardy, Google Contacts, iCloud, and Outlook are all supported</p>
   </div>
 </div>
 
@@ -22,13 +22,16 @@ ob_start();
     <div class="form-group">
       <label class="form-label" for="import_file">CSV or vCard file</label>
       <input class="form-control" type="file" id="import_file" name="import_file" required accept=".csv,.vcf,.vcard,text/csv,text/vcard,text/x-vcard,text/directory,application/vcard,application/x-vcard">
-      <div class="form-hint">Both single and bulk imports are supported. A .vcf file may contain one or many VCARD entries.</div>
+      <div class="form-hint">The format is detected automatically from the file headers — no manual selection needed.</div>
     </div>
 
     <div class="form-group">
-      <div class="form-hint">
-        CSV supported headers include: <code>first_name</code>, <code>last_name</code>, <code>fn</code>, <code>email</code>/<code>email1..3</code>, <code>phone</code>/<code>phone1..3</code>, <code>org</code>, <code>title</code>, <code>birthday</code>, <code>note</code>, <code>home_*</code>, <code>work_*</code>.
-      </div>
+      <div class="form-label" style="margin-bottom:8px">Supported formats</div>
+      <div class="form-hint"><strong>vCard (.vcf)</strong> — exported by Apple Contacts (iCloud), Google Contacts ("Export vCard"), Thunderbird CardBook, and most contact apps. Both single and bulk .vcf files are supported.</div>
+      <div class="form-hint" style="margin-top:6px"><strong>Google Contacts CSV</strong> — use <em>Google Contacts → Export → Google CSV</em>. Auto-detected by the <code>Given Name</code> / <code>E-mail 1 - Value</code> columns.</div>
+      <div class="form-hint" style="margin-top:6px"><strong>iCloud CSV / vCard</strong> — use <em>iCloud Contacts → Export vCard</em> (preferred) or the iCloud CSV download. vCard files are natively supported.</div>
+      <div class="form-hint" style="margin-top:6px"><strong>Outlook CSV</strong> — use <em>Outlook → File → Open &amp; Export → Import/Export → Export to a File → Comma Separated Values</em>. Auto-detected by the <code>E-mail Address</code> / <code>Business Phone</code> columns.</div>
+      <div class="form-hint" style="margin-top:6px"><strong>Cardy CSV</strong> — re-import a file previously exported from the Actions → Export as CSV option.</div>
       <div class="form-hint" style="margin-top:8px">
         Download sample CSV: <a href="/assets/examples/contacts-import-template.csv" download>contacts-import-template.csv</a>
       </div>

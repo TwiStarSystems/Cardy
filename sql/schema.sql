@@ -158,4 +158,37 @@ CREATE TABLE IF NOT EXISTS `addressbookchanges` (
     FOREIGN KEY (`addressbookid`) REFERENCES `addressbooks` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- -------------------------------------------------------
+-- Contact groups / labels
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `contact_groups` (
+    `id`             INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `addressbook_id` INT UNSIGNED NOT NULL,
+    `name`           VARCHAR(100) NOT NULL,
+    `color`          VARCHAR(20) DEFAULT '',
+    `created_at`     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `idx_ab_name` (`addressbook_id`, `name`),
+    FOREIGN KEY (`addressbook_id`) REFERENCES `addressbooks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `contact_group_members` (
+    `group_id` INT UNSIGNED NOT NULL,
+    `card_id`  INT UNSIGNED NOT NULL,
+    PRIMARY KEY (`group_id`, `card_id`),
+    FOREIGN KEY (`group_id`) REFERENCES `contact_groups` (`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`card_id`)  REFERENCES `cards` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- -------------------------------------------------------
+-- Contact history / activity log
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `contact_history` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `card_id`    INT UNSIGNED NOT NULL,
+    `action`     VARCHAR(30) NOT NULL,
+    `detail`     TEXT,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_card_id` (`card_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET foreign_key_checks = 1;

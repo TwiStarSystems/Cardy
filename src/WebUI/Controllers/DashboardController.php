@@ -36,12 +36,15 @@ class DashboardController extends Controller
             $upcoming = array_slice($upcoming, 0, 5);
         }
 
+        $upcomingBirthdays = Contact::getUpcomingBirthdays($user['username'], 30);
+
         $this->render('dashboard', [
-            'user'          => $user,
-            'contactCount'  => $contactCount,
-            'upcomingCount' => $upcomingCount,
-            'upcoming'      => $upcoming,
-            'csrf'          => $this->csrfToken(),
+            'user'              => $user,
+            'contactCount'      => $contactCount,
+            'upcomingCount'     => $upcomingCount,
+            'upcoming'          => $upcoming,
+            'upcomingBirthdays' => $upcomingBirthdays,
+            'csrf'              => $this->csrfToken(),
         ]);
     }
 }
