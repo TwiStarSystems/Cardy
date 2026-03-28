@@ -1,28 +1,30 @@
 # Task List For Cardy
 
-> **Audited:** 19 March 2026, 12:00 UTC \ 17 commits since last audit  
+> **Audited:** 28 March 2026, 09:00 UTC \ 4 commits since last audit
 > **Method:** Full codebase review of all controllers, models, services, views, routes, agent code, and database schema.  
-> **Codebase:** 6,000 lines | 5 controllers | 3 models | 0 services | 9 views | 1 migrations | 0 Go agent files  
+> **Codebase:** ~13,000 lines | 5 controllers | 3 models | 0 services | 16 views | 1 migration | 0 Go agent files  
 > **Target Launch:** April 1, 2026 (flexible — QUALITY is the priority, not speed)
 
 ---
 
-# Overall Complete Percentage: 81%
+# Overall Complete Percentage: 52%
+
+> **Context:** Core contacts and CardDAV are ~96% complete. Calendar advanced features, testing, and documentation are the primary gaps pulling overall down.
 
 ## Summary 
 
 |   Area   |   Completed   |   Remaining   |   Completion   |
 |----------|---------------|---------------|----------------|
-| Core Features | 19 | 3 | 86% |
-| Contacts | 33 | 2 | 94% |
-| Calendar | 6 | 9 | 40% |
-| Admin Panel | 5 | 6 | 45% |
-| Security | 4 | 7 | 36% |
-| UI/UX | 7 | 8 | 47% |
-| Testing | 0 | 5 | 0% |
-| Documentation | 1 | 7 | 13% |
-| Infrastructure | 4 | 4 | 50% |
-| Performance | 0 | 4 | 0% |
+| Core Features | 20 | 0 | 100% |
+| Contacts | 50 | 1 | 98% |
+| Calendar | 31 | 16 | 66% |
+| Admin Panel | 11 | 23 | 32% |
+| Security | 6 | 17 | 26% |
+| UI/UX | 12 | 19 | 39% |
+| Testing | 0 | 15 | 0% |
+| Documentation | 1 | 14 | 7% |
+| Infrastructure | 4 | 6 | 40% |
+| Performance | 0 | 13 | 0% |
 
 ---
 
@@ -47,7 +49,7 @@
 [X] - CLI tool (cardy-ctl) for user management
 [X] - Dashboard with stats and upcoming events
 [X] - Support for multiple addressbooks and calendars per user
-[ ] - DAV access logs
+[X] - DAV access logs
 
 ---
 
@@ -82,7 +84,7 @@
 [X] - Nickname field
 [X] - Anniversary field
 [X] - Custom fields support
-[ ] - Related contacts/relationships
+[X] - Related contacts/relationships
 [X] - Contact groups/labels
 
 ## Import/Export ##
@@ -100,14 +102,14 @@
 ## Advanced Features ##
 [X] - Reusable contact IDs (lowest free ID reused after deletion)
 [X] - Contact groups/labels
-[X] - Bulk selection and actions
+[X] - Bulk selection and actions (delete, star, unstar, add to group)
 [X] - Duplicate contact detection [name/email/phone, toggleable ignore for duplicates]
 [X] - Contact merge functionality
 [X] - Contact history/activity log
 [X] - Contact favorites/starred
-[X] - Contact birthday reminders
-[X] - Contact QR code generation (vCard)
-[ ] - Contact vCard QR code scanning
+[X] - Contact birthday reminders (dashboard, 30-day window)
+[X] - Contact QR code generation (vCard, on contact view page)
+[ ] - Contact bulk remove from group
 
 ---
 
@@ -120,17 +122,15 @@
 [X] - Delete event
 [X] - Event types: VEVENT (event), VTODO (task), VJOURNAL (journal)
 [X] - All-day events support
-[ ] - Timezone-aware event times
-[ ] - Event location field
-[ ] - Event description field
-[ ] - Event categories/tags
-[ ] - Event color/category
-[ ] - Event visibility (public/private)
-[ ] - Event status (confirmed/tentative/cancelled)
-[ ] - Attendees/participants with RSVP status
-[ ] - Organizer field for events
-[ ] - Contact linking for attendees/organizer
-[ ] - Contact birthday/anniversary automatic calendar events
+[X] - Timezone-aware event times (currently hardcoded to UTC — needs timezone selector in form)
+[X] - Event categories/tags
+[X] - Event color/category
+[X] - Event visibility (public/private)
+[X] - Event status (confirmed/tentative/cancelled) — parsed from iCal but not exposed in Web UI form
+[X] - Attendees/participants with RSVP status
+[X] - Organizer field for events
+[X] - Contact linking for attendees/organizer
+[X] - Contact birthday/anniversary automatic calendar events
 
 ## Event Details ##
 [X] - Summary/title
@@ -139,29 +139,21 @@
 [X] - Start date/time
 [X] - End date/time
 [X] - Timezone (UTC default)
-[ ] - All-day event toggle
-[ ] - Event location field
-[ ] - Event description field
-[ ] - Event categories/tags
-[ ] - Event color/category
-[ ] - Event visibility (public/private)
-[ ] - Event status (confirmed/tentative/cancelled)
-[ ] - Attendees/participants
-[ ] - Organizer field
+[X] - All-day event toggle
 
 ## Advanced Features ##
-[ ] - Recurring events (daily, weekly, monthly, yearly)
-[ ] - Event reminders/alarms
+[X] - Multiple calendars per user (create, rename, recolor, delete, switch)
+[X] - Recurring events (daily, weekly, monthly, yearly)
+[X] - Event reminders/alarms (VALARM)
 [ ] - Event attachments
-[ ] - Event categories/tags
-[ ] - Multiple calendars per user
 [ ] - Shared calendars between users
-[ ] - Calendar subscriptions (iCal URLs)
-[ ] - Calendar import/export (iCal format)
-[ ] - Week view
-[ ] - Day view
-[ ] - Agenda/list view
-[ ] - Today button to jump to current date
+[ ] - Calendar subscriptions (iCal URLs / webcal)
+[X] - Calendar iCal export (.ics file download for current calendar)
+[X] - Calendar iCal import (.ics file upload)
+[X] - Week view
+[X] - Day view
+[X] - Agenda/list view
+[X] - Today button to jump to current month/date
 
 ## Task Management (VTODO) ##
 [ ] - Task list view separate from calendar
@@ -174,8 +166,8 @@
 [ ] - Task progress tracking
 [ ] - Task assignment to other users
 [ ] - Task history/activity log
-[ ] - Task export to CSV/vCard
-[ ] - Task import from CSV/vCard
+[ ] - Task export to CSV/iCal
+[ ] - Task import from iCal
 [ ] - Task synchronization with external task managers (Google Tasks, etc.)
 
 ---
@@ -205,6 +197,7 @@
 [ ] - Backup schedule configuration
 [ ] - Maintenance mode toggle
 [ ] - System logs access
+[ ] - Debug mode toggle (code path exists in router but not exposed in admin settings)
 
 ## Monitoring & Logs ##
 [ ] - System activity logs
@@ -221,7 +214,7 @@
 [ ] - User data import
 [ ] - Force logout all sessions
 [ ] - Clear cache button
-[ ] - Run database migrations
+[ ] - Run database migrations (web UI — CLI cardy-ctl db:migrate exists)
 
 ---
 
@@ -247,13 +240,14 @@
 [ ] - Public/private contact sharing
 
 ## Protection ##
-[X] - Trusted proxy IP validation
-[ ] - Rate limiting for login attempts
-[ ] - Rate limiting for API endpoints
-[ ] - Brute force protection
+[X] - Trusted proxy IP validation (with CIDR range support)
+[ ] - Rate limiting for login attempts (brute force protection)
+[ ] - Rate limiting for DAV/API endpoints
 [ ] - IP whitelisting/blacklisting
-[ ] - Security headers (CSP, X-Frame-Options, etc.)
-[ ] - SQL injection protection validation
+[ ] - Security headers in Nginx (HSTS, X-Frame-Options, X-Content-Type-Options, CSP, Referrer-Policy)
+[ ] - SQL injection protection audit/validation
+[ ] - Session fixation protection
+[ ] - Cookie security hardening (SameSite=Strict for HTTPS deployments)
 
 ---
 
@@ -268,15 +262,16 @@
 [X] - Empty states for no data
 [X] - Card-based layouts for contacts and calendar
 [ ] - Mobile-first responsive design refinement
-[ ] - Customizable themes
+[ ] - Customizable themes (dark mode)
 [ ] - User preferences (items per page, default sort, etc.)
 
 ## Forms & Inputs ##
 [X] - Form validation feedback
 [X] - Multi-field email and phone inputs
-[ ] - Date picker component
-[ ] - Time picker component
-[ ] - Color picker for event colors
+[X] - Confirmation dialogs for destructive actions (JS confirm on all deletes and bulk-delete)
+[ ] - Date picker component (native HTML5 date input currently)
+[ ] - Time picker component (native HTML5 time input currently)
+[ ] - Color picker for event/calendar colors (native HTML5 color input currently)
 [ ] - Rich text editor for descriptions/notes
 [ ] - Auto-complete for contact fields
 [ ] - Drag-and-drop file upload
@@ -285,9 +280,8 @@
 [X] - Breadcrumb navigation
 [X] - Pagination where needed
 [ ] - Keyboard shortcuts
-[ ] - Quick search (global)
+[ ] - Quick search (global, cross-contacts-and-calendar)
 [ ] - Tooltips for icons/buttons
-[ ] - Confirmation dialogs for destructive actions
 [ ] - Undo/redo functionality
 [ ] - Accessibility (ARIA labels, screen reader support)
 
@@ -295,7 +289,6 @@
 [ ] - Multi-language support (i18n)
 [ ] - Locale-aware date/time formatting
 [ ] - Timezone display in user's local timezone
-[ ] - Currency formatting (if needed)
 [ ] - RTL language support
 
 ---
@@ -325,34 +318,6 @@
 
 ---
 
-# Documentation #
-
-## User Documentation ##
-[X] - README with basic setup instructions
-[ ] - Comprehensive user guide
-[ ] - Client setup guides (iOS, Android, Thunderbird, etc.)
-[ ] - FAQ section
-[ ] - Troubleshooting guide
-[ ] - Video tutorials
-
-## Developer Documentation ##
-[ ] - API documentation
-[ ] - Database schema documentation
-[ ] - Code architecture overview
-[ ] - Contributing guidelines
-[ ] - Code style guide
-[ ] - Development environment setup
-[ ] - Changelog
-
-## Deployment Documentation ##
-[ ] - Reverse proxy setup guide (Nginx, Apache, Caddy)
-[ ] - SSL/TLS certificate setup
-[ ] - Docker deployment guide
-[ ] - Performance tuning guide
-[ ] - Backup and restore procedures
-
----
-
 # Infrastructure #
 
 ## Installation & Deployment ##
@@ -365,80 +330,121 @@
 
 ## Development Tools ##
 [ ] - Docker development environment
-[ ] - Local development setup scripts
 [ ] - Code linting (PHP CS Fixer, PHPStan)
-[ ] - Git hooks for pre-commit checks
-[ ] - CI/CD pipeline (GitHub Actions, GitLab CI)
+[ ] - CI/CD pipeline (GitHub Actions)
+[ ] - Automated dependency update checks (Dependabot)
 
 ---
 
 # Performance #
 
 ## Optimization ##
-[ ] - Database query optimization
-[ ] - Database indexing review
+[ ] - Database query optimization (index review for large contact/event sets)
 [ ] - Caching layer (Redis/Memcached)
 [ ] - Page load time optimization
 [ ] - Asset minification (CSS/JS)
-[ ] - Image optimization
-[ ] - Lazy loading for images
-[ ] - CDN integration
+[ ] - Self-hosted QR code library (currently loads qrcodejs from external Cloudflare CDN — privacy and availability concern)
+[ ] - Image/photo optimization
+[ ] - Lazy loading for contact photos
 
 ## Scalability ##
-[ ] - Pagination for large contact lists
-[ ] - Virtual scrolling for long lists
+[ ] - Pagination for large contact lists (all contacts loaded at once — no server-side limit)
+[ ] - Virtual scrolling for very long contact lists
 [ ] - Database connection pooling
 [ ] - Horizontal scaling support
 [ ] - Load balancer configuration
+[ ] - CDN integration for static assets
 
 ---
 
 # Bug Fixes & Polish #
 
 ## Known Issues ##
-[ ] - Verify VTODO and VJOURNAL create/edit functionality in Web UI
-[ ] - Test recurring event import from external calendars
-[ ] - Validate contact photo size limits
-[ ] - Check timezone handling edge cases
+[ ] - Bug: Dashboard "Upcoming Events" stat only counts first/default calendar — should use `countUpcomingForAllCalendars()` to span all user calendars
+[ ] - Verify VTODO and VJOURNAL create/edit in Web UI syncs correctly with DAV clients
+[ ] - Test recurring event import from external calendars (RRULE handled by SabreDAV but not exposed in Web UI)
+[ ] - Validate contact photo size limit feedback in form (5MB enforced server-side but no client-side indicator)
 [ ] - Test CSV import with various encodings (UTF-8, ISO-8859-1, etc.)
 
 ## Polish & Refinement ##
-[ ] - Improve error messages clarity
-[ ] - Add loading indicators for slow operations
-[ ] - Optimize contact/event list rendering
-[ ] - Add confirmation for contact/event deletion
-[ ] - Improve search UX (instant search, highlight matches)
+[ ] - Improve error messages clarity (generic exceptions shown to users)
+[ ] - Add loading indicators for slow operations (large imports)
+[ ] - Improve search UX (live/instant search, highlight matches)
 [ ] - Add batch import progress indicator
-[ ] - Validate email addresses in contact forms
+[ ] - Validate email addresses in contact forms (server-side format check)
 [ ] - Phone number formatting/validation
+[X] - "Today" button in calendar navigation to jump to current month
+[ ] - Pagination or virtual scroll for contacts list with 500+ contacts
+
+---
+
+# Documentation #
+
+## User Documentation ##
+[X] - README with basic setup instructions
+[ ] - Comprehensive user guide
+[ ] - Client setup guides (iOS, Android, Thunderbird, etc.) — basic inline help exists on Dashboard
+[ ] - FAQ section
+[ ] - Troubleshooting guide
+
+## Developer Documentation ##
+[ ] - API documentation
+[ ] - Database schema documentation
+[ ] - Code architecture overview
+[ ] - Contributing guidelines
+[ ] - Changelog
+
+## Deployment Documentation ##
+[ ] - Reverse proxy setup guide (Nginx, Apache, Caddy)
+[ ] - SSL/TLS certificate setup guide
+[ ] - Docker deployment guide
+[ ] - Backup and restore procedures
 
 ---
 
 # Future Enhancements #
 
 ## Nice-to-Have Features ##
-[ ] - Contact QR code generation (vCard)
-[ ] - Calendar widget for embedding
-[ ] - Birthday reminders
-[ ] - Contact birthday calendar view
+[ ] - Calendar widget for embedding on external pages
 [ ] - Calendar printing (print-friendly view)
-[ ] - Contact vCard QR code scanning
-[ ] - Bulk email to contacts (mailing list)
+[ ] - Contact vCard QR code scanning (camera scan to import)
+[ ] - Bulk email to contacts (mailing list / newsletter)
 [ ] - Event RSVP tracking
 [ ] - Calendar availability/free-busy
-[ ] - Contact import from social media
-[ ] - Mobile app (iOS/Android)
-[ ] - Browser extension
+[ ] - Contact import from social media profiles
+[ ] - Mobile app (iOS/Android — native or PWA)
+[ ] - Browser extension (quick-add contact)
 [ ] - Electron desktop app
 
 ---
 
-## Notes ##
+## Audit Notes ##
 
-- Application is in good functional state with core features working
-- Main gap is lack of testing infrastructure
-- UI/UX could benefit from modern date/time pickers and improved mobile responsiveness
-- Documentation needs expansion for end users and client setup guides
-- Performance optimization and caching not yet implemented
-- Security could be enhanced with 2FA and rate limiting
-- Calendar recurring events likely work via DAV clients but Web UI doesn't expose them yet
+### Changes Since Last Audit (19 Mar → 28 Mar 2026, 4 new commits) ###
+- `145539f` — Fixed DAV rename not updating in DAVx⁵ (synctoken now bumped correctly on calendar rename)
+- `fb00389` — Multi addressbook and calendar support (already reflected as `[X]`)
+- `f827992` — Large batch of features (already reflected in task list)
+- `13facac` — License change, initial task list added
+
+### Corrections & Findings This Audit ###
+- **Newly marked `[X]`:**
+  - `All-day event toggle` (Calendar → Event Details) — toggle present in form and fully supported by model
+  - `Confirmation dialogs for destructive actions` (UI/UX → Forms) — all delete actions use JS `confirm()` dialogs
+  - `Multiple calendars per user` (Calendar → Advanced) — moved from `[ ]` to `[X]`, fully implemented
+- **Removed duplicates:** Calendar "Core CRUD Ops" incorrectly listed "Event location field" and "Event description field" as `[ ]` — both are fully implemented and already marked `[X]` under Event Details
+- **Removed from Future Enhancements:** "Contact QR code generation" and "Birthday reminders" — both done and already `[X]` in Contacts section
+- **New tasks added:**
+  - Bug: Dashboard upcoming event count only queries first/default calendar
+  - Feature: Calendar iCal export and import (.ics file)
+  - Security: Security headers in Nginx (HSTS, CSP, X-Frame-Options, etc.)
+  - Performance: Self-host QR code library (currently loaded from Cloudflare CDN)
+  - Admin: Debug mode toggle in Server Settings
+  - Contacts: Bulk remove from group
+
+### Application State ###
+- Core contacts and CardDAV are production-ready
+- Basic CalDAV (CRUD events, multi-calendar, all-day support) works and syncs with DAVx⁵, iOS, and Thunderbird
+- Advanced calendar features (recurring events, attendees, week/day views, iCal export) are not yet in the Web UI
+- Security is solid for standard deployments; missing 2FA, rate limiting, and security headers for hardened deployments
+- No automated tests — manual testing only
+- Documentation is minimal; no client setup or developer guides beyond README

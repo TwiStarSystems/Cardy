@@ -305,6 +305,31 @@ $c       = $contact ?? [];
   </div>
   <button type="button" id="add-custom" class="btn btn-secondary btn-sm">Add Custom Field</button>
 
+  <!-- Related Contacts -->
+  <div class="form-section-title" style="margin-top:var(--spacing-md)">Related Contacts</div>
+  <div id="related-list">
+    <?php foreach (($c['related'] ?? []) as $rel): ?>
+    <div class="form-row related-row">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Relationship</label>
+        <select class="form-control" name="related_type[]">
+          <?php foreach (['spouse','partner','child','parent','sibling','friend','colleague','manager','assistant','relative','other'] as $rtype): ?>
+          <option value="<?= $rtype ?>" <?= ($rel['type'] ?? 'other') === $rtype ? 'selected' : '' ?>><?= ucfirst($rtype) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="form-group" style="flex:2">
+        <label class="form-label">Name</label>
+        <input class="form-control" type="text" name="related_name[]" value="<?= $_ctrl->e($rel['name'] ?? '') ?>" placeholder="Full name">
+      </div>
+      <div class="form-group" style="max-width:140px;align-self:flex-end;">
+        <button type="button" class="btn btn-ghost remove-related">Remove</button>
+      </div>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <button type="button" id="add-related" class="btn btn-secondary btn-sm">Add Related Contact</button>
+
   <!-- Notes -->
   <div class="form-section-title" style="margin-top:var(--spacing-md)">Notes</div>
   <div class="form-group">
@@ -431,6 +456,34 @@ $c       = $contact ?? [];
   </div>
 </template>
 
+<template id="related-row-template">
+  <div class="form-row related-row">
+    <div class="form-group" style="flex:1">
+      <label class="form-label">Relationship</label>
+      <select class="form-control" name="related_type[]">
+        <option value="spouse">Spouse</option>
+        <option value="partner">Partner</option>
+        <option value="child">Child</option>
+        <option value="parent">Parent</option>
+        <option value="sibling">Sibling</option>
+        <option value="friend">Friend</option>
+        <option value="colleague">Colleague</option>
+        <option value="manager">Manager</option>
+        <option value="assistant">Assistant</option>
+        <option value="relative">Relative</option>
+        <option value="other" selected>Other</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:2">
+      <label class="form-label">Name</label>
+      <input class="form-control" type="text" name="related_name[]" placeholder="Full name">
+    </div>
+    <div class="form-group" style="max-width:140px;align-self:flex-end;">
+      <button type="button" class="btn btn-ghost remove-related">Remove</button>
+    </div>
+  </div>
+</template>
+
 <template id="email-row-template">
   <div class="form-row email-row">
     <div class="form-group">
@@ -485,6 +538,7 @@ $c       = $contact ?? [];
   const socialList = document.getElementById('social-list');
   const anniversaryList = document.getElementById('anniversary-list');
   const customList = document.getElementById('custom-list');
+  const relatedList = document.getElementById('related-list');
 
   const addEmailBtn       = document.getElementById('add-email');
   const addPhoneBtn       = document.getElementById('add-phone');
@@ -492,6 +546,7 @@ $c       = $contact ?? [];
   const addSocialBtn      = document.getElementById('add-social');
   const addAnniversaryBtn = document.getElementById('add-anniversary');
   const addCustomBtn      = document.getElementById('add-custom');
+  const addRelatedBtn     = document.getElementById('add-related');
 
   const emailCounter = document.getElementById('email-counter');
   const phoneCounter = document.getElementById('phone-counter');
@@ -502,6 +557,7 @@ $c       = $contact ?? [];
   const socialTpl      = document.getElementById('social-row-template');
   const anniversaryTpl = document.getElementById('anniversary-row-template');
   const customTpl      = document.getElementById('custom-row-template');
+  const relatedTpl     = document.getElementById('related-row-template');
 
   function addRow(list, tpl) {
     list.appendChild(tpl.content.firstElementChild.cloneNode(true));
@@ -537,6 +593,7 @@ $c       = $contact ?? [];
   addSocialBtn.addEventListener('click', () => addRow(socialList, socialTpl));
   addAnniversaryBtn.addEventListener('click', () => addRow(anniversaryList, anniversaryTpl));
   addCustomBtn.addEventListener('click', () => addRow(customList, customTpl));
+  addRelatedBtn.addEventListener('click', () => addRow(relatedList, relatedTpl));
 
   emailList.addEventListener('click', (event) => {
     if (!event.target.classList.contains('remove-email')) return;
@@ -565,6 +622,9 @@ $c       = $contact ?? [];
   });
   customList.addEventListener('click', (e) => {
     if (e.target.classList.contains('remove-custom')) removeRow(customList, '.custom-row', e.target);
+  });
+  relatedList.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-related')) removeRow(relatedList, '.related-row', e.target);
   });
 
   updateButtonState();

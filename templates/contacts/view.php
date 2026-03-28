@@ -194,6 +194,18 @@ $vcardText = \Cardy\Models\Contact::buildVCard($qrData);
     <?php endforeach; ?>
     <?php endif; ?>
 
+    <?php if (!empty($c['related'])): ?>
+    <div class="detail-group">
+      <div class="detail-label">Related</div>
+      <?php foreach ($c['related'] as $rel): ?>
+      <div class="detail-value">
+        <?= $_ctrl->e($rel['name'] ?? '') ?>
+        <span class="badge badge-muted" style="margin-left:4px"><?= $_ctrl->e($rel['type'] ?? '') ?></span>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
   </div>
 </div>
 

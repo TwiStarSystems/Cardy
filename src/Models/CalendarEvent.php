@@ -168,15 +168,18 @@ class CalendarEvent
             return [];
         }
 
-        $sql    = 'SELECT id, uri, calendardata, firstoccurence, lastoccurence, componenttype FROM calendarobjects WHERE calendarid = ?';
-        $params = [$calId];
+        $sql        = 'SELECT id, uri, calendardata FROM calendarobjects WHERE calendarid = ?';
+        $params     = [$calId];
+        $rangeStart = null;
+        $rangeEnd   = null;
 
         if ($year !== null && $month !== null) {
-            $start    = mktime(0, 0, 0, $month, 1, $year);
-            $end      = mktime(23, 59, 59, $month + 1, 0, $year);
-            $sql     .= ' AND firstoccurence >= ? AND firstoccurence <= ?';
-            $params[] = $start;
-            $params[] = $end;
+            $rangeStart = mktime(0, 0, 0, $month, 1, $year);
+            $rangeEnd   = mktime(23, 59, 59, $month + 1, 0, $year);
+            // Overlap detection so recurring events from earlier months appear
+            $sql       .= ' AND firstoccurence <= ? AND (lastoccurence >= ? OR lastoccurence IS NULL)';
+            $params[]   = $rangeEnd;
+            $params[]   = $rangeStart;
         }
 
         $stmt = $pdo->prepare($sql . ' ORDER BY firstoccurence ASC');
@@ -184,10 +187,51 @@ class CalendarEvent
 
         $events = [];
         foreach ($stmt->fetchAll() as $row) {
-            $parsed  = self::parseICal($row['calendardata']);
-            $events[] = array_merge(['id' => $row['id'], 'uri' => $row['uri']], $parsed);
+            $isRecurring = $rangeStart !== null && (
+                str_contains($row['calendardata'], "\nRRULE:") ||
+                str_contains($row['calendardata'], "\r\nRRULE:")
+            );
+            if ($isRecurring) {
+                foreach (self::expandInRange($row['calendardata'], (int) $row['id'], $row['uri'], $rangeStart, $rangeEnd) as $ev) {
+                    $events[] = $ev;
+                }
+            } else {
+                $events[] = array_merge(['id' => $row['id'], 'uri' => $row['uri']], self::parseICal($row['calendardata']));
+            }
         }
 
+        return $events;
+    }
+
+    public static function allForUserInRange(string $username, \DateTimeInterface $from, \DateTimeInterface $to, ?int $calendarId = null): array
+    {
+        $pdo     = Database::getInstance();
+        $calId   = self::getCalendarId($username, $calendarId);
+        if (!$calId) {
+            return [];
+        }
+        $startTs = $from->getTimestamp();
+        $endTs   = $to->getTimestamp();
+
+        $stmt = $pdo->prepare(
+            'SELECT id, uri, calendardata FROM calendarobjects
+             WHERE calendarid = ? AND firstoccurence <= ? AND (lastoccurence >= ? OR lastoccurence IS NULL)
+             ORDER BY firstoccurence ASC'
+        );
+        $stmt->execute([$calId, $endTs, $startTs]);
+
+        $events = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $isRecurring = str_contains($row['calendardata'], "\nRRULE:") ||
+                           str_contains($row['calendardata'], "\r\nRRULE:");
+            if ($isRecurring) {
+                foreach (self::expandInRange($row['calendardata'], (int) $row['id'], $row['uri'], $startTs, $endTs) as $ev) {
+                    $events[] = $ev;
+                }
+            } else {
+                $events[] = array_merge(['id' => $row['id'], 'uri' => $row['uri']], self::parseICal($row['calendardata']));
+            }
+        }
         return $events;
     }
 
@@ -266,20 +310,128 @@ class CalendarEvent
             $allDay = !($component->DTSTART->hasTime());
         }
 
+        // Timezone
+        $timezone = 'UTC';
+        if (isset($component->DTSTART)) {
+            $tzIdParam = $component->DTSTART['TZID'];
+            if ($tzIdParam) {
+                $tzName = (string) $tzIdParam;
+                try { new \DateTimeZone($tzName); $timezone = $tzName; } catch (\Exception $e) {}
+            } elseif ($dtStart) {
+                $tzName = $dtStart->getTimezone()->getName();
+                if ($tzName !== '' && $tzName !== false) {
+                    $timezone = $tzName;
+                }
+            }
+        }
+
+        // Visibility (CLASS property)
+        $visibility = 'PUBLIC';
+        if (isset($component->CLASS)) {
+            $v = strtoupper((string) $component->CLASS);
+            if (in_array($v, ['PUBLIC', 'PRIVATE', 'CONFIDENTIAL'], true)) {
+                $visibility = $v;
+            }
+        }
+
+        // Categories
+        $categories = [];
+        if (isset($component->CATEGORIES)) {
+            foreach ($component->CATEGORIES as $cat) {
+                foreach ($cat->getParts() as $part) {
+                    $part = trim((string) $part);
+                    if ($part !== '') {
+                        $categories[] = $part;
+                    }
+                }
+            }
+        }
+
+        // Color (RFC 7986 COLOR, fallback to Apple extension)
+        $color = '';
+        if (isset($component->COLOR)) {
+            $color = (string) $component->COLOR;
+        } elseif (isset($component->{'X-APPLE-CALENDAR-COLOR'})) {
+            $color = (string) $component->{'X-APPLE-CALENDAR-COLOR'};
+        }
+
+        // Organizer
+        $organizer = ['name' => '', 'email' => ''];
+        if (isset($component->ORGANIZER)) {
+            $orgProp          = $component->ORGANIZER;
+            $orgUri           = (string) $orgProp;
+            $organizer['email'] = (string) preg_replace('/^mailto:/i', '', $orgUri);
+            $organizer['name']  = $orgProp['CN'] ? (string) $orgProp['CN'] : '';
+        }
+
+        // Attendees
+        $attendees = [];
+        if (isset($component->ATTENDEE)) {
+            foreach ($component->ATTENDEE as $att) {
+                $uri      = (string) $att;
+                $email    = (string) preg_replace('/^mailto:/i', '', $uri);
+                $name     = $att['CN']       ? (string) $att['CN']       : '';
+                $rsvp     = $att['RSVP']     ? strtoupper((string) $att['RSVP'])     : 'FALSE';
+                $partstat = $att['PARTSTAT'] ? strtoupper((string) $att['PARTSTAT']) : 'NEEDS-ACTION';
+                if ($email !== '') {
+                    $attendees[] = ['name' => $name, 'email' => $email, 'rsvp' => $rsvp, 'partstat' => $partstat];
+                }
+            }
+        }
+
+        // Recurring rule
+        $rrule = null;
+        if (isset($component->RRULE)) {
+            $parts = $component->RRULE->getParts();
+            $freq  = strtoupper($parts['FREQ'] ?? '');
+            if (in_array($freq, ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'], true)) {
+                $rrule = [
+                    'freq'     => $freq,
+                    'interval' => isset($parts['INTERVAL']) ? (int) $parts['INTERVAL'] : 1,
+                    'count'    => isset($parts['COUNT'])    ? (int) $parts['COUNT']    : null,
+                    'until'    => isset($parts['UNTIL'])    ? (string) $parts['UNTIL'] : null,
+                    'byday'    => isset($parts['BYDAY'])    ? (string) $parts['BYDAY'] : null,
+                ];
+            }
+        }
+
+        // Alarm — first VALARM DISPLAY trigger stored as minutes before event
+        $alarmMinutes = null;
+        if (isset($component->VALARM)) {
+            $alarm = $component->VALARM;
+            if (isset($alarm->TRIGGER)) {
+                $trigger = (string) $alarm->TRIGGER;
+                if (preg_match('/^-P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$/', $trigger, $m)) {
+                    $total = (int) ($m[1] ?? 0) * 1440 + (int) ($m[2] ?? 0) * 60 + (int) ($m[3] ?? 0);
+                    if ($total > 0) {
+                        $alarmMinutes = $total;
+                    }
+                }
+            }
+        }
+
         return [
-            'uid'         => isset($component->UID)         ? (string) $component->UID         : '',
-            'summary'     => isset($component->SUMMARY)     ? (string) $component->SUMMARY     : '',
-            'description' => isset($component->DESCRIPTION) ? (string) $component->DESCRIPTION : '',
-            'location'    => isset($component->LOCATION)    ? (string) $component->LOCATION    : '',
-            'status'      => isset($component->STATUS)      ? (string) $component->STATUS      : '',
-            'type'        => $compType ?? 'VEVENT',
-            'all_day'     => $allDay,
-            'start'       => $dtStart ? $dtStart->format('Y-m-d H:i') : '',
-            'start_date'  => $dtStart ? $dtStart->format('Y-m-d')     : '',
-            'start_time'  => $dtStart ? $dtStart->format('H:i')       : '',
-            'end'         => $dtEnd   ? $dtEnd->format('Y-m-d H:i')   : '',
-            'end_date'    => $dtEnd   ? $dtEnd->format('Y-m-d')       : '',
-            'end_time'    => $dtEnd   ? $dtEnd->format('H:i')         : '',
+            'uid'           => isset($component->UID)         ? (string) $component->UID         : '',
+            'summary'       => isset($component->SUMMARY)     ? (string) $component->SUMMARY     : '',
+            'description'   => isset($component->DESCRIPTION) ? (string) $component->DESCRIPTION : '',
+            'location'      => isset($component->LOCATION)    ? (string) $component->LOCATION    : '',
+            'status'        => isset($component->STATUS)      ? (string) $component->STATUS      : '',
+            'type'          => $compType ?? 'VEVENT',
+            'all_day'       => $allDay,
+            'start'         => $dtStart ? $dtStart->format('Y-m-d H:i') : '',
+            'start_date'    => $dtStart ? $dtStart->format('Y-m-d')     : '',
+            'start_time'    => $dtStart ? $dtStart->format('H:i')       : '',
+            'end'           => $dtEnd   ? $dtEnd->format('Y-m-d H:i')   : '',
+            'end_date'      => $dtEnd   ? $dtEnd->format('Y-m-d')       : '',
+            'end_time'      => $dtEnd   ? $dtEnd->format('H:i')         : '',
+            'timezone'      => $timezone,
+            'visibility'    => $visibility,
+            'categories'    => $categories,
+            'color'         => $color,
+            'organizer'     => $organizer,
+            'attendees'     => $attendees,
+            'rrule'         => $rrule,
+            'alarm_minutes' => $alarmMinutes,
         ];
     }
 
@@ -290,6 +442,9 @@ class CalendarEvent
             'status' => '', 'type' => 'VEVENT', 'all_day' => false,
             'start' => '', 'start_date' => '', 'start_time' => '',
             'end' => '',   'end_date' => '',   'end_time' => '',
+            'timezone' => 'UTC', 'visibility' => 'PUBLIC', 'categories' => [],
+            'color' => '', 'organizer' => ['name' => '', 'email' => ''], 'attendees' => [],
+            'rrule' => null, 'alarm_minutes' => null,
         ];
     }
 
@@ -311,7 +466,66 @@ class CalendarEvent
         $comp->DESCRIPTION = $data['description'] ?? '';
         $comp->LOCATION    = $data['location'] ?? '';
 
-        $tz = new \DateTimeZone($data['timezone'] ?? 'UTC');
+        // Status
+        $status = strtoupper($data['status'] ?? '');
+        if (in_array($status, ['CONFIRMED', 'TENTATIVE', 'CANCELLED'], true)) {
+            $comp->STATUS = $status;
+        }
+
+        // Visibility
+        $visibility = strtoupper($data['visibility'] ?? 'PUBLIC');
+        if (in_array($visibility, ['PRIVATE', 'CONFIDENTIAL'], true)) {
+            $comp->CLASS = $visibility;
+        }
+
+        // Categories
+        $categories = $data['categories'] ?? [];
+        if (is_string($categories)) {
+            $categories = array_values(array_filter(array_map('trim', explode(',', $categories))));
+        }
+        if (!empty($categories)) {
+            $comp->add('CATEGORIES', implode(',', $categories));
+        }
+
+        // Color
+        if (!empty($data['color']) && preg_match('/^#[0-9a-fA-F]{6}$/', $data['color'])) {
+            $comp->COLOR = $data['color'];
+            $comp->add('X-APPLE-CALENDAR-COLOR', $data['color']);
+        }
+
+        // Organizer
+        $orgEmail = trim($data['organizer']['email'] ?? '');
+        if ($orgEmail !== '') {
+            $orgParams = [];
+            $orgName   = trim($data['organizer']['name'] ?? '');
+            if ($orgName !== '') {
+                $orgParams['CN'] = $orgName;
+            }
+            $comp->add('ORGANIZER', 'mailto:' . $orgEmail, $orgParams);
+        }
+
+        // Attendees
+        foreach (($data['attendees'] ?? []) as $att) {
+            $attEmail = trim($att['email'] ?? '');
+            if ($attEmail === '') {
+                continue;
+            }
+            $attParams = ['CUTYPE' => 'INDIVIDUAL', 'ROLE' => 'REQ-PARTICIPANT', 'PARTSTAT' => 'NEEDS-ACTION'];
+            $attName   = trim($att['name'] ?? '');
+            if ($attName !== '') {
+                $attParams['CN'] = $attName;
+            }
+            if (!empty($att['rsvp']) && strtoupper((string) $att['rsvp']) === 'TRUE') {
+                $attParams['RSVP'] = 'TRUE';
+            }
+            $comp->add('ATTENDEE', 'mailto:' . $attEmail, $attParams);
+        }
+
+        try {
+            $tz = new \DateTimeZone($data['timezone'] ?? 'UTC');
+        } catch (\Exception $e) {
+            $tz = new \DateTimeZone('UTC');
+        }
 
         if (!empty($data['all_day'])) {
             $startStr = $data['start_date'] ?? date('Y-m-d');
@@ -326,6 +540,41 @@ class CalendarEvent
         }
 
         $comp->DTSTAMP = new \DateTime('now', new \DateTimeZone('UTC'));
+
+        // Recurring rule (RRULE)
+        $rrule = $data['rrule'] ?? null;
+        if (!empty($rrule['freq'])) {
+            $rFreq = strtoupper($rrule['freq']);
+            if (in_array($rFreq, ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'], true)) {
+                $rruleStr = 'FREQ=' . $rFreq;
+                $rInt = max(1, (int) ($rrule['interval'] ?? 1));
+                if ($rInt > 1) {
+                    $rruleStr .= ';INTERVAL=' . $rInt;
+                }
+                if (!empty($rrule['count'])) {
+                    $rruleStr .= ';COUNT=' . max(1, (int) $rrule['count']);
+                } elseif (!empty($rrule['until'])) {
+                    $rUntil = preg_replace('/[^0-9TZ]/', '', trim((string) $rrule['until']));
+                    if ($rUntil !== '') {
+                        $rruleStr .= ';UNTIL=' . $rUntil;
+                    }
+                }
+                $comp->add('RRULE', $rruleStr);
+            }
+        }
+
+        // Alarm (VALARM)
+        $alarmMinutes = max(0, (int) ($data['alarm_minutes'] ?? 0));
+        if ($alarmMinutes > 0) {
+            $aH      = (int) floor($alarmMinutes / 60);
+            $aM      = $alarmMinutes % 60;
+            $trigger = '-PT' . ($aH > 0 ? $aH . 'H' : '') . ($aM > 0 ? $aM . 'M' : '0M');
+            $alarm   = $vcal->createComponent('VALARM');
+            $alarm->add('ACTION', 'DISPLAY');
+            $alarm->add('DESCRIPTION', 'Reminder');
+            $alarm->add('TRIGGER', $trigger);
+            $comp->add($alarm);
+        }
 
         return $vcal->serialize();
     }
@@ -432,6 +681,194 @@ class CalendarEvent
         )->execute([$uri, $token, $calId, $op]);
     }
 
+    /**
+     * Returns synthetic all-day events for contact birthdays and anniversaries in
+     * the given month. These are generated from the address book on the fly and
+     * are NOT stored in the database.
+     */
+    public static function getBirthdayEventsForMonth(string $username, int $year, int $month): array
+    {
+        $contacts = \Cardy\Models\Contact::allForUser($username);
+        $events   = [];
+
+        foreach ($contacts as $c) {
+            $name = trim($c['fn'] ?? '');
+            if ($name === '') {
+                $name = trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
+            }
+            if ($name === '') {
+                continue;
+            }
+
+            // Birthday
+            $bday = trim($c['birthday'] ?? '');
+            if ($bday !== '') {
+                $bMonth = $bDay = 0;
+                if (preg_match('/^--(\.{2})-(\.{2})$/', $bday, $m) ||
+                    preg_match('/^--(\d{2})-(\d{2})$/', $bday, $m)) {
+                    $bMonth = (int) $m[1];
+                    $bDay   = (int) $m[2];
+                } elseif (preg_match('/^(\d{4})-?(\d{2})-?(\d{2})$/', $bday, $m)) {
+                    $bMonth = (int) $m[2];
+                    $bDay   = (int) $m[3];
+                }
+                if ($bMonth === $month && $bDay >= 1 && $bDay <= 31) {
+                    $events[] = self::syntheticContactEvent(
+                        sprintf('%04d-%02d-%02d', $year, $month, $bDay),
+                        "\u{1F382} {$name}\u{2019}s Birthday",
+                        'birthday'
+                    );
+                }
+            }
+
+            // Anniversaries (X-ANNIVERSARY / X-ABDATE values stored as date strings)
+            foreach ($c['anniversaries'] ?? [] as $ann) {
+                $ann    = trim((string) $ann);
+                $aMonth = $aDay = 0;
+                if (preg_match('/^--(\d{2})-(\d{2})$/', $ann, $m)) {
+                    $aMonth = (int) $m[1];
+                    $aDay   = (int) $m[2];
+                } elseif (preg_match('/^(\d{4})-?(\d{2})-?(\d{2})$/', $ann, $m)) {
+                    $aMonth = (int) $m[2];
+                    $aDay   = (int) $m[3];
+                }
+                if ($aMonth === $month && $aDay >= 1 && $aDay <= 31) {
+                    $events[] = self::syntheticContactEvent(
+                        sprintf('%04d-%02d-%02d', $year, $month, $aDay),
+                        "\u{1F48C} {$name}\u{2019}s Anniversary",
+                        'anniversary'
+                    );
+                }
+            }
+        }
+
+        return $events;
+    }
+
+    private static function syntheticContactEvent(string $dateStr, string $summary, string $kind): array
+    {
+        return [
+            'id'          => null,
+            'uri'         => '',
+            'uid'         => '',
+            'summary'     => $summary,
+            'description' => '',
+            'location'    => '',
+            'status'      => '',
+            'type'        => 'VEVENT',
+            'all_day'     => true,
+            'start'       => $dateStr,
+            'start_date'  => $dateStr,
+            'start_time'  => '',
+            'end'         => $dateStr,
+            'end_date'    => $dateStr,
+            'end_time'    => '',
+            'timezone'    => 'UTC',
+            'visibility'  => 'PUBLIC',
+            'categories'  => [$kind],
+            'color'       => '',
+            'organizer'   => ['name' => '', 'email' => ''],
+            'attendees'   => [],
+            'event_kind'  => $kind,
+        ];
+    }
+
+    private static function expandInRange(string $icalData, int $id, string $uri, int $startTs, int $endTs): array
+    {
+        try {
+            $vcal = Reader::read($icalData);
+            $from = (new \DateTime('@' . $startTs))->setTimezone(new \DateTimeZone('UTC'));
+            $to   = (new \DateTime('@' . $endTs))->setTimezone(new \DateTimeZone('UTC'));
+            $exp  = $vcal->expand($from, $to);
+
+            $results = [];
+            foreach (['VEVENT', 'VTODO', 'VJOURNAL'] as $type) {
+                foreach ($exp->select($type) as $comp) {
+                    $dtS  = isset($comp->DTSTART) ? $comp->DTSTART->getDateTime() : null;
+                    $dtE  = isset($comp->DTEND)   ? $comp->DTEND->getDateTime()   : null;
+                    $aDay = isset($comp->DTSTART) && !$comp->DTSTART->hasTime();
+                    $results[] = [
+                        'id'            => $id,   'uri'       => $uri,
+                        'uid'           => isset($comp->UID)         ? (string) $comp->UID         : '',
+                        'summary'       => isset($comp->SUMMARY)     ? (string) $comp->SUMMARY     : '',
+                        'description'   => isset($comp->DESCRIPTION) ? (string) $comp->DESCRIPTION : '',
+                        'location'      => isset($comp->LOCATION)    ? (string) $comp->LOCATION    : '',
+                        'status'        => isset($comp->STATUS)      ? (string) $comp->STATUS      : '',
+                        'type'          => $type,
+                        'all_day'       => $aDay,
+                        'start'         => $dtS ? $dtS->format('Y-m-d H:i') : '',
+                        'start_date'    => $dtS ? $dtS->format('Y-m-d') : '',
+                        'start_time'    => $dtS ? $dtS->format('H:i') : '',
+                        'end'           => $dtE ? $dtE->format('Y-m-d H:i') : '',
+                        'end_date'      => $dtE ? $dtE->format('Y-m-d') : '',
+                        'end_time'      => $dtE ? $dtE->format('H:i') : '',
+                        'timezone'      => 'UTC', 'visibility' => 'PUBLIC', 'categories' => [],
+                        'color'         => '', 'organizer' => ['name' => '', 'email' => ''],
+                        'attendees'     => [], 'rrule' => null, 'alarm_minutes' => null,
+                        'is_recurring'  => true,
+                    ];
+                }
+            }
+            return $results;
+        } catch (\Exception $e) {
+            return [array_merge(['id' => $id, 'uri' => $uri], self::parseICal($icalData))];
+        }
+    }
+
+    public static function exportCalendar(string $username, ?int $calendarId = null): string
+    {
+        $pdo   = Database::getInstance();
+        $calId = self::getCalendarId($username, $calendarId);
+        if (!$calId) {
+            return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//TwiStar Systems//Cardy//EN\r\nEND:VCALENDAR\r\n";
+        }
+        $stmt = $pdo->prepare('SELECT calendardata FROM calendarobjects WHERE calendarid = ? ORDER BY firstoccurence ASC');
+        $stmt->execute([$calId]);
+        $components = [];
+        foreach ($stmt->fetchAll() as $row) {
+            try {
+                $vcal = Reader::read($row['calendardata']);
+                foreach (['VEVENT', 'VTODO', 'VJOURNAL'] as $type) {
+                    foreach ($vcal->select($type) as $comp) {
+                        $components[] = $comp->serialize();
+                    }
+                }
+            } catch (\Exception $e) {}
+        }
+        return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//TwiStar Systems//Cardy//EN\r\n"
+            . implode('', $components)
+            . "END:VCALENDAR\r\n";
+    }
+
+    public static function importCalendar(string $username, string $icsData, ?int $calendarId = null): array
+    {
+        $result = ['imported' => 0, 'failed' => 0, 'errors' => []];
+        try {
+            $vcal = Reader::read($icsData);
+        } catch (\Exception $e) {
+            $result['errors'][] = 'Invalid iCal file: ' . $e->getMessage();
+            $result['failed']++;
+            return $result;
+        }
+        foreach (['VEVENT', 'VTODO', 'VJOURNAL'] as $type) {
+            foreach ($vcal->select($type) as $comp) {
+                try {
+                    $wrapper          = new VCalendar();
+                    $wrapper->VERSION = '2.0';
+                    $wrapper->add(clone $comp);
+                    $data         = self::parseICal($wrapper->serialize());
+                    $data['type'] = $type;
+                    self::create($username, $data, $calendarId);
+                    $result['imported']++;
+                } catch (\Exception $e) {
+                    $result['failed']++;
+                    $result['errors'][] = (isset($comp->SUMMARY) ? (string) $comp->SUMMARY : 'Unknown') . ': ' . $e->getMessage();
+                }
+            }
+        }
+        return $result;
+    }
+
     private static function extractOccurrences(string $icalData): array
     {
         try {
@@ -445,6 +882,18 @@ class CalendarEvent
                         $end = $comp->DTEND->getDateTime()->getTimestamp();
                     } elseif ($start) {
                         $end = $start + 3600;
+                    }
+                    // For recurring events, extend lastoccurence for overlap queries
+                    if (isset($comp->RRULE)) {
+                        $parts = $comp->RRULE->getParts();
+                        if (!empty($parts['UNTIL'])) {
+                            try {
+                                $until = new \DateTime((string) $parts['UNTIL']);
+                                $end   = max((int) ($end ?? 0), $until->getTimestamp());
+                            } catch (\Exception $e) {}
+                        } elseif (empty($parts['COUNT'])) {
+                            $end = 32503680000; // ~year 3000
+                        }
                     }
                     return [$start, $end ?? $start];
                 }

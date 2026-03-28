@@ -63,4 +63,10 @@ $server->addPlugin(new \Sabre\CalDAV\SharingPlugin());
 $server->addPlugin(new \Sabre\CalDAV\Subscriptions\Plugin());
 $server->addPlugin(new \Sabre\DAVACL\Plugin());
 
+// DAV access logging (configurable via config.php: app.dav_log_file)
+$davLogFile = \Cardy\Config::get('app.dav_log_file', '');
+if ($davLogFile !== '') {
+    $server->addPlugin(new \Cardy\Backend\DavLogger((string) $davLogFile));
+}
+
 $server->exec();

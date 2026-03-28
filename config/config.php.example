@@ -23,5 +23,10 @@ return [
         'timezone'       => 'UTC',
         // Name shown in browser and DAV realm
         'name'           => 'Cardy',
+        // Optional: path to the DAV access log file.
+        // Leave empty ('') to disable logging.
+        // The directory will be created automatically if it does not exist.
+        // Example: '/var/log/cardy/dav-access.log'
+        'dav_log_file'   => '',
     ],
 ];

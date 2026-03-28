@@ -507,6 +507,25 @@ class ContactsController extends Controller
         }
         $result['custom_fields'] = $customFields;
 
+        // Related contacts
+        $relNames = $post['related_name'] ?? [];
+        $relTypes = $post['related_type'] ?? [];
+        if (!is_array($relNames)) {
+            $relNames = [$relNames];
+        }
+        if (!is_array($relTypes)) {
+            $relTypes = [$relTypes];
+        }
+        $related = [];
+        foreach ($relNames as $i => $name) {
+            $name = trim((string) $name);
+            if ($name !== '') {
+                $type    = trim((string) ($relTypes[$i] ?? 'other')) ?: 'other';
+                $related[] = ['name' => $name, 'type' => $type];
+            }
+        }
+        $result['related'] = $related;
+
         if ($photoUpload !== null) {
             $result['photo_upload'] = $photoUpload;
         }

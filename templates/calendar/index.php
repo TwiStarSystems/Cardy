@@ -132,8 +132,20 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 <!-- Navigation -->
 <div class="calendar-nav">
   <a href="/calendar?year=<?= $prevYear ?>&month=<?= $prevMonth ?>" class="btn btn-secondary btn-sm">← Previous</a>
+  <a href="/calendar" class="btn btn-secondary btn-sm">Today</a>
   <span class="calendar-month-title"><?= $_ctrl->e($monthName) ?> <?= $year ?></span>
   <a href="/calendar?year=<?= $nextYear ?>&month=<?= $nextMonth ?>" class="btn btn-secondary btn-sm">Next →</a>
+</div>
+
+<div style="display:flex;gap:6px;margin-bottom:var(--spacing-md);align-items:center;flex-wrap:wrap">
+  <a href="/calendar" class="btn btn-secondary btn-sm" aria-current="page">Month</a>
+  <a href="/calendar/week" class="btn btn-ghost btn-sm">Week</a>
+  <a href="/calendar/day?date=<?= date('Y-m-d') ?>" class="btn btn-ghost btn-sm">Day</a>
+  <a href="/calendar/agenda" class="btn btn-ghost btn-sm">Agenda</a>
+  <span style="margin-left:auto;display:flex;gap:6px">
+    <a href="/calendar/export" class="btn btn-ghost btn-sm">↓ Export .ics</a>
+    <a href="/calendar/import" class="btn btn-ghost btn-sm">↑ Import .ics</a>
+  </span>
 </div>
 
 <!-- Grid -->
@@ -166,9 +178,15 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         <?= $day ?>
       </a>
       <?php foreach (array_slice($dayEvents, 0, 3) as $ev): ?>
+      <?php if ($ev['id'] !== null): ?>
       <a href="/calendar/<?= (int) $ev['id'] ?>/edit" class="calendar-event-pill" title="<?= $_ctrl->e($ev['summary']) ?>">
         <?= $_ctrl->e($ev['summary'] ?: '(no title)') ?>
       </a>
+      <?php else: ?>
+      <span class="calendar-event-pill" style="cursor:default;opacity:.85" title="<?= $_ctrl->e($ev['summary']) ?>">
+        <?= $_ctrl->e($ev['summary'] ?: '(no title)') ?>
+      </span>
+      <?php endif; ?>
       <?php endforeach; ?>
       <?php if (count($dayEvents) > 3): ?>
       <span class="text-xs text-muted">+<?= count($dayEvents) - 3 ?> more</span>
@@ -203,7 +221,9 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
           <td><?= $ev['all_day'] ? '<span class="badge badge-purple">All day</span>' : $_ctrl->e($ev['start_time']) ?></td>
           <td><?= $_ctrl->e($ev['location']) ?></td>
           <td>
+            <?php if ($ev['id'] !== null): ?>
             <a href="/calendar/<?= (int) $ev['id'] ?>/edit" class="btn btn-ghost btn-sm">Edit</a>
+            <?php endif; ?>
           </td>
         </tr>
         <?php endforeach; ?>

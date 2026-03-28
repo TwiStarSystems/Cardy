@@ -507,6 +507,21 @@ class Contact
             }
         }
 
+        // Related contacts (X-ABRELATEDNAMES Apple-style + RELATED vCard4 extension)
+        $related = [];
+        if (isset($vcard->{'X-ABRELATEDNAMES'})) {
+            foreach ($vcard->{'X-ABRELATEDNAMES'} as $r) {
+                $type = $r['X-ABLabel'] ? strtolower((string) $r['X-ABLabel']) : 'other';
+                $related[] = ['name' => (string) $r, 'type' => $type];
+            }
+        }
+        if (isset($vcard->RELATED)) {
+            foreach ($vcard->RELATED as $r) {
+                $type = $r['TYPE'] ? strtolower((string) $r['TYPE']) : 'other';
+                $related[] = ['name' => (string) $r, 'type' => $type];
+            }
+        }
+
         // Starred flag
         $isStarred = isset($vcard->{'X-CARDY-STARRED'}) && (string) $vcard->{'X-CARDY-STARRED'} === '1';
 
@@ -529,6 +544,7 @@ class Contact
             'social_profiles' => $socialProfiles,
             'anniversaries'  => $anniversaries,
             'custom_fields'  => $customFields,
+            'related'        => $related,
             'birthday'         => isset($vcard->BDAY)  ? (string) $vcard->BDAY  : '',
             'note'             => isset($vcard->NOTE)  ? (string) $vcard->NOTE  : '',
             'photo'            => $photo,
@@ -547,7 +563,7 @@ class Contact
             'title' => '', 'nickname' => '', 'email' => '', 'emails' => [],
             'phone' => '', 'phones' => [], 'addresses' => [],
             'urls' => [], 'social_profiles' => [], 'anniversaries' => [],
-            'custom_fields' => [], 'birthday' => '', 'note' => '',
+            'custom_fields' => [], 'related' => [], 'birthday' => '', 'note' => '',
             'photo' => '', 'photo_mime' => 'image/jpeg', 'uid' => '',
             'is_starred' => false, 'ignore_duplicate' => false, 'groups' => [],
         ];
@@ -669,6 +685,14 @@ class Contact
             $vcard->add('X-CARDY-CUSTOM', $cf['value'], ['LABEL' => $label]);
         }
 
+        // Related contacts
+        foreach (($data['related'] ?? []) as $rel) {
+            if (empty($rel['name'])) {
+                continue;
+            }
+            $vcard->add('X-ABRELATEDNAMES', $rel['name'], ['X-ABLabel' => $rel['type'] ?? 'other']);
+        }
+
         if (!empty($data['is_starred'])) {
             $vcard->add('X-CARDY-STARRED', '1');
         }
@@ -702,6 +726,7 @@ class Contact
         unset($vcard->UID);
         unset($vcard->{'X-CARDY-STARRED'});
         unset($vcard->{'X-CARDY-NO-DUPLICATE'});
+        unset($vcard->{'X-ABRELATEDNAMES'});
 
         $vcard->add('UID', $uid);
 
@@ -807,6 +832,14 @@ class Contact
             }
             $label = preg_replace('/[^A-Za-z0-9 _-]/', '', $cf['label'] ?? 'Custom') ?: 'Custom';
             $vcard->add('X-CARDY-CUSTOM', $cf['value'], ['LABEL' => $label]);
+        }
+
+        // Related contacts
+        foreach (($data['related'] ?? []) as $rel) {
+            if (empty($rel['name'])) {
+                continue;
+            }
+            $vcard->add('X-ABRELATEDNAMES', $rel['name'], ['X-ABLabel' => $rel['type'] ?? 'other']);
         }
 
         if (!empty($data['is_starred'])) {
