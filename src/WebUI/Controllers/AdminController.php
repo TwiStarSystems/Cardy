@@ -13,6 +13,24 @@ class AdminController extends Controller
         return __DIR__ . '/../../../config/config.php';
     }
 
+    /**
+     * Clean a URL submitted via a form: strip control characters (e.g. stray
+     * terminal escape sequences pasted into the installer/this field) and
+     * surrounding whitespace, then drop any trailing slash.
+     */
+    private function sanitizeUrlInput(mixed $raw): string
+    {
+        $value = is_string($raw) ? $raw : '';
+        // Strip ANSI/terminal escape sequences first (e.g. arrow-key codes like
+        // ESC[D pasted into the installer — the ESC is a control char but the
+        // trailing "[D" is printable and would otherwise survive), then remove
+        // any remaining control characters and surrounding whitespace.
+        $value = preg_replace('/\x1B\[[0-9;?]*[ -\/]*[@-~]/', '', $value) ?? $value;
+        $value = preg_replace('/\x1B./s', '', $value) ?? $value;
+        $value = preg_replace('/[\x00-\x1F\x7F]+/', '', $value) ?? '';
+        return rtrim(trim($value), '/');
+    }
+
     public function users(): void
     {
         $this->requireAdmin();
@@ -156,8 +174,10 @@ class AdminController extends Controller
             'app'   => [
                 'name'            => \Cardy\Config::get('app.name', 'Cardy'),
                 'timezone'        => \Cardy\Config::get('app.timezone', 'UTC'),
-                'webui_url'       => \Cardy\Config::get('app.webui_url', 'http://localhost'),
-                'dav_url'         => \Cardy\Config::get('app.dav_url', 'http://localhost'),
+                // Sanitize on display so a config with stray control characters
+                // (e.g. from a bad paste during install) renders as an editable field.
+                'webui_url'       => $this->sanitizeUrlInput(\Cardy\Config::get('app.webui_url', 'http://localhost')),
+                'dav_url'         => $this->sanitizeUrlInput(\Cardy\Config::get('app.dav_url', 'http://localhost')),
                 'trusted_proxies' => (array) \Cardy\Config::get('app.trusted_proxies', ['127.0.0.1', '::1']),
             ],
         ]);
@@ -173,8 +193,8 @@ class AdminController extends Controller
 
         $name = trim((string) ($_POST['name'] ?? 'Cardy'));
         $timezone = trim((string) ($_POST['timezone'] ?? 'UTC'));
-        $webuiUrl = rtrim(trim((string) ($_POST['webui_url'] ?? 'http://localhost')), '/');
-        $davUrl = rtrim(trim((string) ($_POST['dav_url'] ?? 'http://localhost')), '/');
+        $webuiUrl = $this->sanitizeUrlInput($_POST['webui_url'] ?? '');
+        $davUrl = $this->sanitizeUrlInput($_POST['dav_url'] ?? '');
         $trustedProxiesRaw = trim((string) ($_POST['trusted_proxies'] ?? '127.0.0.1,::1'));
 
         $trustedProxies = array_values(array_filter(array_map('trim', explode(',', $trustedProxiesRaw))));
@@ -192,10 +212,12 @@ class AdminController extends Controller
             return;
         }
 
-        if (!preg_match('#^https?://#i', $webuiUrl) || !preg_match('#^https?://#i', $davUrl)) {
-            $this->flash('error', 'Web UI URL and DAV URL must start with http:// or https://');
-            $this->redirect('/admin/server');
-            return;
+        foreach (['Web UI URL' => $webuiUrl, 'DAV URL' => $davUrl] as $label => $url) {
+            if (!preg_match('#^https?://#i', $url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+                $this->flash('error', "{$label} must be a valid http:// or https:// URL.");
+                $this->redirect('/admin/server');
+                return;
+            }
         }
 
         $config['app']['name'] = $name;

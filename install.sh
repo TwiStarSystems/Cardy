@@ -327,6 +327,16 @@ read -r -p "Database name [cardy]: "              DB_NAME;     DB_NAME="${DB_NAM
 read -r -p "Database user [cardy]: "              DB_USER;     DB_USER="${DB_USER:-cardy}"
 read -r -s -p "Database password [auto-generate if blank]: " DB_PASS; echo ""
 read -r -p "Base URI [http://localhost]: "        BASE_URI;    BASE_URI="${BASE_URI:-http://localhost}"
+# Strip ANSI escape sequences (e.g. arrow-key codes like ESC[D from a paste),
+# then any remaining control/whitespace characters.
+BASE_URI="$(printf '%s' "${BASE_URI}" \
+    | sed -E $'s/\x1b\\[[0-9;?]*[ -\\/]*[A-Za-z~]//g; s/\x1b.//g' \
+    | tr -d '[:cntrl:][:space:]')"
+if [[ ! "${BASE_URI}" =~ ^https?:// ]]; then
+    warn "Base URI '${BASE_URI}' has no http(s):// scheme; assuming https://"
+    BASE_URI="https://${BASE_URI}"
+fi
+BASE_URI="${BASE_URI%/}"
 WEBUI_URL="${BASE_URI}"
 DAV_URL="${BASE_URI}"
 read -r -p "Admin username [admin]: "             ADMIN_USER;  ADMIN_USER="${ADMIN_USER:-admin}"
