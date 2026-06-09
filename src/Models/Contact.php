@@ -532,6 +532,9 @@ class Contact
             'fn'             => isset($vcard->FN)  ? (string) $vcard->FN  : '',
             'last_name'      => $nameParts[0],
             'first_name'     => $nameParts[1],
+            'middle_name'    => $nameParts[2],
+            'prefix'         => $nameParts[3],
+            'suffix'         => $nameParts[4],
             'org'            => isset($vcard->ORG)  ? (string) $vcard->ORG  : '',
             'title'          => isset($vcard->TITLE) ? (string) $vcard->TITLE : '',
             'nickname'       => $nickname,
@@ -559,7 +562,8 @@ class Contact
     private static function emptyFields(): array
     {
         return [
-            'fn' => '', 'last_name' => '', 'first_name' => '', 'org' => '',
+            'fn' => '', 'last_name' => '', 'first_name' => '',
+            'middle_name' => '', 'prefix' => '', 'suffix' => '', 'org' => '',
             'title' => '', 'nickname' => '', 'email' => '', 'emails' => [],
             'phone' => '', 'phones' => [], 'addresses' => [],
             'urls' => [], 'social_profiles' => [], 'anniversaries' => [],
@@ -569,27 +573,84 @@ class Contact
         ];
     }
 
+    /**
+     * Build a brand-new vCard (version 3.0) from managed field data.
+     * Thin wrapper around applyManagedFields() so there is a single writer.
+     */
     public static function buildVCard(array $data): string
+    {
+        $vcard = new VCard(['VERSION' => '3.0']);
+        $vcard = self::applyManagedFields($vcard, $data);
+        return $vcard->serialize();
+    }
+
+    /**
+     * Write Cardy's managed fields onto a vCard, replacing any prior values.
+     *
+     * Every property variant that parseVCard() reads back is removed first, so
+     * re-adding managed values can never produce duplicates. Properties Cardy
+     * does not manage are left untouched, preserving unknown/custom vCard data.
+     *
+     * For the structured N property, sub-components Cardy has no form field for
+     * (middle name, prefix, suffix) are carried over from the existing card
+     * unless the caller explicitly supplies them, so editing never drops them.
+     *
+     * Returns the card normalized to vCard 3.0: Cardy always emits 3.0-style
+     * properties, so the whole document (including any preserved vCard 4.0
+     * properties such as a `data:` URI PHOTO) is converted to match, keeping
+     * the VERSION header and the serialized properties consistent (issue #6).
+     * The conversion produces a new object, so callers must use the return value.
+     */
+    private static function applyManagedFields(VCard $vcard, array $data): VCard
     {
         $uid = $data['uid'] ?: 'cardy-' . bin2hex(random_bytes(16));
 
-        $vcard = new VCard([
-            'VERSION' => '3.0',
-            'UID'     => $uid,
-        ]);
+        // Capture existing N sub-components before we unset, so callers that
+        // don't manage every part (merge, etc.) don't lose them on edit.
+        $existingN = isset($vcard->N) ? $vcard->N->getParts() : [];
+        $nLast   = array_key_exists('last_name', $data)   ? (string) ($data['last_name'] ?? '')   : (string) ($existingN[0] ?? '');
+        $nFirst  = array_key_exists('first_name', $data)  ? (string) ($data['first_name'] ?? '')  : (string) ($existingN[1] ?? '');
+        $nMiddle = array_key_exists('middle_name', $data) ? (string) ($data['middle_name'] ?? '') : (string) ($existingN[2] ?? '');
+        $nPrefix = array_key_exists('prefix', $data)      ? (string) ($data['prefix'] ?? '')      : (string) ($existingN[3] ?? '');
+        $nSuffix = array_key_exists('suffix', $data)      ? (string) ($data['suffix'] ?? '')      : (string) ($existingN[4] ?? '');
 
-        $fn = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
-        if (empty($fn)) {
-            $fn = $data['org'] ?: $data['email'] ?: 'Unknown';
+        // Remove every property variant parseVCard() reads, so re-adding the
+        // managed values below can never duplicate what a client synced in.
+        unset(
+            $vcard->FN,
+            $vcard->N,
+            $vcard->ORG,
+            $vcard->TITLE,
+            $vcard->NICKNAME,
+            $vcard->EMAIL,
+            $vcard->TEL,
+            $vcard->ADR,
+            $vcard->URL,
+            $vcard->BDAY,
+            $vcard->NOTE,
+            $vcard->UID,
+            $vcard->{'X-SOCIALPROFILE'},
+            $vcard->{'X-ANNIVERSARY'},
+            $vcard->ANNIVERSARY,
+            $vcard->{'X-ABDATE'},
+            $vcard->{'X-CARDY-CUSTOM'},
+            $vcard->{'X-CARDY-STARRED'},
+            $vcard->{'X-CARDY-NO-DUPLICATE'},
+            $vcard->{'X-ABRELATEDNAMES'},
+            $vcard->RELATED
+        );
+        foreach (['twitter', 'linkedin', 'instagram', 'facebook', 'github', 'youtube', 'mastodon'] as $net) {
+            unset($vcard->{'X-' . strtoupper($net)});
+        }
+
+        $vcard->add('UID', $uid);
+
+        $fn = trim($nFirst . ' ' . $nLast);
+        if ($fn === '') {
+            $fn = ($data['org'] ?? '') ?: ($data['email'] ?? '') ?: 'Unknown';
         }
         $vcard->add('FN', $fn);
-        $vcard->add('N', [
-            $data['last_name']  ?? '',
-            $data['first_name'] ?? '',
-            '',
-            '',
-            '',
-        ]);
+        $vcard->add('N', [$nLast, $nFirst, $nMiddle, $nPrefix, $nSuffix]);
 
         if (!empty($data['org'])) {
             $vcard->add('ORG', $data['org']);
@@ -702,154 +763,9 @@ class Contact
 
         self::applyPhotoManagedFields($vcard, $data);
 
-        return $vcard->serialize();
-    }
-
-    private static function applyManagedFields(VCard $vcard, array $data): void
-    {
-        $uid = $data['uid'] ?: 'cardy-' . bin2hex(random_bytes(16));
-
-        unset($vcard->FN);
-        unset($vcard->N);
-        unset($vcard->ORG);
-        unset($vcard->TITLE);
-        unset($vcard->NICKNAME);
-        unset($vcard->EMAIL);
-        unset($vcard->TEL);
-        unset($vcard->ADR);
-        unset($vcard->URL);
-        unset($vcard->{'X-SOCIALPROFILE'});
-        unset($vcard->{'X-ANNIVERSARY'});
-        unset($vcard->{'X-CARDY-CUSTOM'});
-        unset($vcard->BDAY);
-        unset($vcard->NOTE);
-        unset($vcard->UID);
-        unset($vcard->{'X-CARDY-STARRED'});
-        unset($vcard->{'X-CARDY-NO-DUPLICATE'});
-        unset($vcard->{'X-ABRELATEDNAMES'});
-
-        $vcard->add('UID', $uid);
-
-        $fn = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
-        if (empty($fn)) {
-            $fn = $data['org'] ?: $data['email'] ?: 'Unknown';
-        }
-        $vcard->add('FN', $fn);
-        $vcard->add('N', [
-            $data['last_name']  ?? '',
-            $data['first_name'] ?? '',
-            '',
-            '',
-            '',
-        ]);
-
-        if (!empty($data['org'])) {
-            $vcard->add('ORG', $data['org']);
-        }
-        if (!empty($data['title'])) {
-            $vcard->add('TITLE', $data['title']);
-        }
-
-        foreach (($data['emails'] ?? []) as $e) {
-            if (empty($e['address'])) {
-                continue;
-            }
-            $prop = $vcard->add('EMAIL', $e['address']);
-            if (!empty($e['type'])) {
-                $prop->add('TYPE', strtoupper($e['type']));
-            }
-        }
-
-        foreach (($data['phones'] ?? []) as $p) {
-            if (empty($p['number'])) {
-                continue;
-            }
-            $prop = $vcard->add('TEL', $p['number']);
-            if (!empty($p['type'])) {
-                $prop->add('TYPE', strtoupper($p['type']));
-            }
-        }
-
-        foreach (($data['addresses'] ?? []) as $a) {
-            $adrParams = [];
-            if (!empty($a['type'])) {
-                $adrParams['TYPE'] = strtoupper($a['type']);
-            }
-            $vcard->add('ADR', [
-                '',
-                '',
-                $a['street']   ?? '',
-                $a['city']     ?? '',
-                $a['region']   ?? '',
-                $a['postcode'] ?? '',
-                $a['country']  ?? '',
-            ], $adrParams);
-        }
-
-        if (!empty($data['birthday'])) {
-            $vcard->add('BDAY', $data['birthday']);
-        }
-        if (!empty($data['note'])) {
-            $vcard->add('NOTE', $data['note']);
-        }
-        if (!empty($data['nickname'])) {
-            $vcard->add('NICKNAME', $data['nickname']);
-        }
-
-        // URLs
-        foreach (($data['urls'] ?? []) as $u) {
-            if (empty($u['value'])) {
-                continue;
-            }
-            $urlParams = [];
-            if (!empty($u['type'])) {
-                $urlParams['TYPE'] = strtoupper($u['type']);
-            }
-            $vcard->add('URL', $u['value'], $urlParams);
-        }
-
-        // Social profiles
-        foreach (($data['social_profiles'] ?? []) as $sp) {
-            if (empty($sp['value'])) {
-                continue;
-            }
-            $type = strtolower($sp['type'] ?? 'other');
-            $vcard->add('X-SOCIALPROFILE', $sp['value'], ['TYPE' => $type]);
-        }
-
-        // Anniversaries
-        foreach (($data['anniversaries'] ?? []) as $ann) {
-            if (empty($ann)) {
-                continue;
-            }
-            $vcard->add('X-ANNIVERSARY', $ann);
-        }
-
-        // Custom fields
-        foreach (($data['custom_fields'] ?? []) as $cf) {
-            if (empty($cf['value'])) {
-                continue;
-            }
-            $label = preg_replace('/[^A-Za-z0-9 _-]/', '', $cf['label'] ?? 'Custom') ?: 'Custom';
-            $vcard->add('X-CARDY-CUSTOM', $cf['value'], ['LABEL' => $label]);
-        }
-
-        // Related contacts
-        foreach (($data['related'] ?? []) as $rel) {
-            if (empty($rel['name'])) {
-                continue;
-            }
-            $vcard->add('X-ABRELATEDNAMES', $rel['name'], ['X-ABLabel' => $rel['type'] ?? 'other']);
-        }
-
-        if (!empty($data['is_starred'])) {
-            $vcard->add('X-CARDY-STARRED', '1');
-        }
-        if (!empty($data['ignore_duplicate'])) {
-            $vcard->add('X-CARDY-NO-DUPLICATE', '1');
-        }
-
-        self::applyPhotoManagedFields($vcard, $data);
+        // Normalize to vCard 3.0 so the VERSION header matches the 3.0-style
+        // properties written above, downgrading any preserved 4.0 properties.
+        return $vcard->convert(\Sabre\VObject\Document::VCARD30);
     }
 
     private static function applyPhotoManagedFields(VCard $vcard, array $data): void
@@ -1053,7 +969,7 @@ class Contact
             $vcard = new VCard(['VERSION' => '3.0']);
         }
 
-        self::applyManagedFields($vcard, $data);
+        $vcard     = self::applyManagedFields($vcard, $data);
         $vcardData = $vcard->serialize();
         $etag      = md5($vcardData);
         $now       = time();
@@ -1826,7 +1742,7 @@ class Contact
         } catch (\Exception $e) {
             $vcard = new VCard(['VERSION' => '3.0']);
         }
-        self::applyManagedFields($vcard, $mergedData);
+        $vcard     = self::applyManagedFields($vcard, $mergedData);
         $vcardData = $vcard->serialize();
         $pdo->prepare('UPDATE cards SET carddata = ?, etag = ?, size = ?, lastmodified = ? WHERE id = ?')
             ->execute([

@@ -50,14 +50,29 @@ $c       = $contact ?? [];
   <div class="form-section-title">Basic Information</div>
   <div class="form-row">
     <div class="form-group">
+      <label class="form-label" for="prefix">Prefix</label>
+      <input class="form-control" type="text" id="prefix" name="prefix"
+             value="<?= $_ctrl->e($c['prefix'] ?? '') ?>" placeholder="Dr.">
+    </div>
+    <div class="form-group">
       <label class="form-label" for="first_name">First Name</label>
       <input class="form-control" type="text" id="first_name" name="first_name"
              value="<?= $_ctrl->e($c['first_name'] ?? '') ?>" placeholder="John">
     </div>
     <div class="form-group">
+      <label class="form-label" for="middle_name">Middle Name</label>
+      <input class="form-control" type="text" id="middle_name" name="middle_name"
+             value="<?= $_ctrl->e($c['middle_name'] ?? '') ?>" placeholder="Q.">
+    </div>
+    <div class="form-group">
       <label class="form-label" for="last_name">Last Name</label>
       <input class="form-control" type="text" id="last_name" name="last_name"
              value="<?= $_ctrl->e($c['last_name'] ?? '') ?>" placeholder="Doe">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="suffix">Suffix</label>
+      <input class="form-control" type="text" id="suffix" name="suffix"
+             value="<?= $_ctrl->e($c['suffix'] ?? '') ?>" placeholder="Jr.">
     </div>
   </div>
   <div class="form-row">

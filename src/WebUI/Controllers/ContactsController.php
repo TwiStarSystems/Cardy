@@ -419,6 +419,9 @@ class ContactsController extends Controller
         $result = [
             'first_name'  => $post['first_name']  ?? '',
             'last_name'   => $post['last_name']   ?? '',
+            'middle_name' => $post['middle_name'] ?? '',
+            'prefix'      => $post['prefix']      ?? '',
+            'suffix'      => $post['suffix']      ?? '',
             'org'         => $post['org']         ?? '',
             'title'       => $post['title']       ?? '',
             'nickname'    => $post['nickname']    ?? '',

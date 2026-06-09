@@ -6,6 +6,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cardy is a self-hosted **CardDAV + CalDAV server with a web management UI**, written in PHP 8.1+ on top of **SabreDAV** (`sabre/dav`), backed by MySQL/MariaDB, served by Nginx + PHP-FPM. There is no build step and no test suite — code runs directly from source.
 
+## Servers
+### App Server:
+host: 172.16.5.6
+port: 22
+username: root
+password: (PASSWORD provided when prompted)
+
+### Nginx Reverse Proxy:
+host: 172.16.6.50
+port: 22
+username: twistar
+password: Cert authentication (use the provided private key for authentication on my user account)
+
+### NOTE: the Config file for this app is located at "/etc/nginx/live/twistar.org/panel.mc.conf". You can modify it to change the reverse proxy settings as needed.
+
+## Bug tracking
+
+When a bug is discovered (during a review, sanity check, or while working on something else), **file a GitHub issue for it** — one issue per distinct bug, using `gh issue create`. Do this even if you fix it in the same session, so there is a tracked record. Title the issue with the symptom, and in the body include the affected file/function, what goes wrong, and (if known) the fix. The repo is `TwiStarSystems/Cardy`.
+
+## Change workflow (commit + deploy)
+
+Whenever a change lands that **(1) adds a feature, (2) fixes a bug, or (3) removes a feature**, finish it by doing **both** of the following — a change is not "done" until it is committed *and* deployed:
+
+1. **Commit & push to GitHub.** Commit the change with a clear message (reference the issue number for bug fixes, e.g. `Fix #6: …`) and push to `TwiStarSystems/Cardy`. For bug fixes, close the corresponding issue (`gh issue close <n>` or a `Fixes #n` line in the commit/PR).
+2. **Deploy the changed files to the relevant server** (see **Servers** above), based on what changed:
+   - **App code** — anything under `src/`, `public/`, `templates/`, `sql/`, `config/nginx/cardy.conf`, `cardy-ctl`, or `install.sh` → deploy to the **App Server** (`172.16.5.6`). The supported update path is `sudo bash install.sh --update` on that host (pulls latest app files + DB schema while preserving user data); for a one-off file change you may sync just the affected file(s). Restart PHP-FPM if app code changed.
+   - **Reverse-proxy config** — changes to the public edge vhost → deploy to the **Nginx Reverse Proxy** (`172.16.6.50`), file `/etc/nginx/live/twistar.org/panel.mc.conf`, then `nginx -t && systemctl reload nginx`.
+   - A change can touch both (e.g. a new route plus a proxy rule) — deploy to each affected server.
+
+Only skip deployment for changes that don't affect runtime (docs, this file, comments). Confirm the deploy target before pushing files to a server, and never commit secrets (server passwords, DB credentials, the proxy private key) to the repo.
+
 ## Commands
 
 ```bash
