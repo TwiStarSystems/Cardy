@@ -156,11 +156,11 @@ ob_start();
   <div class="form-row">
     <div>
       <div class="form-label">CardDAV URL</div>
-      <div class="dav-url" id="dav-carddav-url"><?= $_ctrl->e($davUrl) ?>/addressbooks/<?= $_ctrl->e($user['username']) ?>/default/</div>
+      <div class="dav-url" id="dav-carddav-url"><?= $_ctrl->e($davUrl) ?>/addressbooks/<?= $_ctrl->e($user['username']) ?></div>
     </div>
     <div>
       <div class="form-label">CalDAV URL</div>
-      <div class="dav-url" id="dav-caldav-url"><?= $_ctrl->e($davUrl) ?>/calendars/<?= $_ctrl->e($user['username']) ?>/default/</div>
+      <div class="dav-url" id="dav-caldav-url"><?= $_ctrl->e($davUrl) ?>/calendars/<?= $_ctrl->e($user['username']) ?></div>
     </div>
   </div>
   <p class="text-xs text-muted mt-sm">Username: <strong><?= $_ctrl->e($user['username']) ?></strong> — use your Cardy password to authenticate.</p>

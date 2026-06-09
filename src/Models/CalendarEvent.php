@@ -410,28 +410,53 @@ class CalendarEvent
             }
         }
 
+        // DUE property (VTODO)
+        $due = null;
+        if (isset($component->DUE)) {
+            try { $due = $component->DUE->getDateTime(); } catch (\Exception $e) {}
+        }
+
+        // PRIORITY (VTODO: 0=undefined, 1=highest, 9=lowest)
+        $priority = 0;
+        if (isset($component->PRIORITY)) {
+            $p = (int) (string) $component->PRIORITY;
+            if ($p >= 0 && $p <= 9) {
+                $priority = $p;
+            }
+        }
+
+        // PERCENT-COMPLETE (VTODO)
+        $percentComplete = 0;
+        if (isset($component->{'PERCENT-COMPLETE'})) {
+            $percentComplete = max(0, min(100, (int) (string) $component->{'PERCENT-COMPLETE'}));
+        }
+
         return [
-            'uid'           => isset($component->UID)         ? (string) $component->UID         : '',
-            'summary'       => isset($component->SUMMARY)     ? (string) $component->SUMMARY     : '',
-            'description'   => isset($component->DESCRIPTION) ? (string) $component->DESCRIPTION : '',
-            'location'      => isset($component->LOCATION)    ? (string) $component->LOCATION    : '',
-            'status'        => isset($component->STATUS)      ? (string) $component->STATUS      : '',
-            'type'          => $compType ?? 'VEVENT',
-            'all_day'       => $allDay,
-            'start'         => $dtStart ? $dtStart->format('Y-m-d H:i') : '',
-            'start_date'    => $dtStart ? $dtStart->format('Y-m-d')     : '',
-            'start_time'    => $dtStart ? $dtStart->format('H:i')       : '',
-            'end'           => $dtEnd   ? $dtEnd->format('Y-m-d H:i')   : '',
-            'end_date'      => $dtEnd   ? $dtEnd->format('Y-m-d')       : '',
-            'end_time'      => $dtEnd   ? $dtEnd->format('H:i')         : '',
-            'timezone'      => $timezone,
-            'visibility'    => $visibility,
-            'categories'    => $categories,
-            'color'         => $color,
-            'organizer'     => $organizer,
-            'attendees'     => $attendees,
-            'rrule'         => $rrule,
-            'alarm_minutes' => $alarmMinutes,
+            'uid'             => isset($component->UID)         ? (string) $component->UID         : '',
+            'summary'         => isset($component->SUMMARY)     ? (string) $component->SUMMARY     : '',
+            'description'     => isset($component->DESCRIPTION) ? (string) $component->DESCRIPTION : '',
+            'location'        => isset($component->LOCATION)    ? (string) $component->LOCATION    : '',
+            'status'          => isset($component->STATUS)      ? (string) $component->STATUS      : '',
+            'type'            => $compType ?? 'VEVENT',
+            'all_day'         => $allDay,
+            'start'           => $dtStart ? $dtStart->format('Y-m-d H:i') : '',
+            'start_date'      => $dtStart ? $dtStart->format('Y-m-d')     : '',
+            'start_time'      => $dtStart ? $dtStart->format('H:i')       : '',
+            'end'             => $dtEnd   ? $dtEnd->format('Y-m-d H:i')   : '',
+            'end_date'        => $dtEnd   ? $dtEnd->format('Y-m-d')       : '',
+            'end_time'        => $dtEnd   ? $dtEnd->format('H:i')         : '',
+            'timezone'        => $timezone,
+            'visibility'      => $visibility,
+            'categories'      => $categories,
+            'color'           => $color,
+            'organizer'       => $organizer,
+            'attendees'       => $attendees,
+            'rrule'           => $rrule,
+            'alarm_minutes'   => $alarmMinutes,
+            'due_date'        => $due ? $due->format('Y-m-d') : '',
+            'due_time'        => $due ? $due->format('H:i')   : '',
+            'priority'        => $priority,
+            'percent_complete' => $percentComplete,
         ];
     }
 
@@ -445,6 +470,7 @@ class CalendarEvent
             'timezone' => 'UTC', 'visibility' => 'PUBLIC', 'categories' => [],
             'color' => '', 'organizer' => ['name' => '', 'email' => ''], 'attendees' => [],
             'rrule' => null, 'alarm_minutes' => null,
+            'due_date' => '', 'due_time' => '', 'priority' => 0, 'percent_complete' => 0,
         ];
     }
 
@@ -466,10 +492,13 @@ class CalendarEvent
         $comp->DESCRIPTION = $data['description'] ?? '';
         $comp->LOCATION    = $data['location'] ?? '';
 
-        // Status
-        $status = strtoupper($data['status'] ?? '');
-        if (in_array($status, ['CONFIRMED', 'TENTATIVE', 'CANCELLED'], true)) {
-            $comp->STATUS = $status;
+        // Status (type-aware)
+        $statusVal = strtoupper($data['status'] ?? '');
+        if ($type === 'VTODO') {
+            $vtodoStatuses = ['NEEDS-ACTION', 'IN-PROCESS', 'COMPLETED', 'CANCELLED'];
+            $comp->STATUS  = in_array($statusVal, $vtodoStatuses, true) ? $statusVal : 'NEEDS-ACTION';
+        } elseif (in_array($statusVal, ['CONFIRMED', 'TENTATIVE', 'CANCELLED'], true)) {
+            $comp->STATUS = $statusVal;
         }
 
         // Visibility
@@ -527,7 +556,36 @@ class CalendarEvent
             $tz = new \DateTimeZone('UTC');
         }
 
-        if (!empty($data['all_day'])) {
+        if ($type === 'VTODO') {
+            // VTODO: optional DTSTART, DUE instead of DTEND
+            if (!empty($data['start_date'])) {
+                if (!empty($data['all_day'])) {
+                    $comp->add('DTSTART', new \DateTime($data['start_date'], $tz))->add(['VALUE' => 'DATE']);
+                } else {
+                    $comp->DTSTART = new \DateTime($data['start_date'] . ' ' . ($data['start_time'] ?? '00:00'), $tz);
+                }
+            }
+            if (!empty($data['due_date'])) {
+                if (!empty($data['all_day'])) {
+                    $comp->add('DUE', new \DateTime($data['due_date'], $tz))->add(['VALUE' => 'DATE']);
+                } else {
+                    $dueTime = $data['due_time'] ?: '23:59';
+                    $comp->add('DUE', new \DateTime($data['due_date'] . ' ' . $dueTime, $tz));
+                }
+            }
+            // PRIORITY (0=undefined, 1=highest, 9=lowest)
+            $priority = (int) ($data['priority'] ?? 0);
+            if ($priority >= 1 && $priority <= 9) {
+                $comp->add('PRIORITY', (string) $priority);
+            }
+            // PERCENT-COMPLETE
+            $pct = max(0, min(100, (int) ($data['percent_complete'] ?? 0)));
+            $comp->add('PERCENT-COMPLETE', (string) $pct);
+            // COMPLETED timestamp when task is marked done
+            if (isset($comp->STATUS) && (string) $comp->STATUS === 'COMPLETED') {
+                $comp->add('COMPLETED', new \DateTime('now', new \DateTimeZone('UTC')));
+            }
+        } elseif (!empty($data['all_day'])) {
             $startStr = $data['start_date'] ?? date('Y-m-d');
             $endStr   = $data['end_date']   ?? $startStr;
             $comp->add('DTSTART', new \DateTime($startStr, $tz))->add(['VALUE' => 'DATE']);
@@ -869,6 +927,82 @@ class CalendarEvent
         return $result;
     }
 
+    // -------------------------------------------------------
+    // VTODO — task queries
+    // -------------------------------------------------------
+
+    /**
+     * Returns all VTODO objects across all (or one) of the user's calendars.
+     */
+    public static function allTasksForUser(string $username, ?int $calendarId = null): array
+    {
+        $pdo    = Database::getInstance();
+        $params = ["principals/{$username}"];
+
+        if ($calendarId !== null) {
+            $sql = 'SELECT co.id, co.uri, co.calendardata, co.calendarid,
+                           ci.displayname AS calendar_name, ci.calendarcolor
+                    FROM calendarobjects co
+                    JOIN calendarinstances ci ON co.calendarid = ci.calendarid
+                    WHERE ci.principaluri = ? AND co.componenttype = \'VTODO\' AND co.calendarid = ?
+                    ORDER BY co.firstoccurence ASC, co.id ASC';
+            $params[] = $calendarId;
+        } else {
+            $sql = 'SELECT co.id, co.uri, co.calendardata, co.calendarid,
+                           ci.displayname AS calendar_name, ci.calendarcolor
+                    FROM calendarobjects co
+                    JOIN calendarinstances ci ON co.calendarid = ci.calendarid
+                    WHERE ci.principaluri = ? AND co.componenttype = \'VTODO\'
+                    ORDER BY co.firstoccurence ASC, co.id ASC';
+        }
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+
+        $tasks = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $parsed = self::parseICal($row['calendardata']);
+            $tasks[] = array_merge([
+                'id'             => (int) $row['id'],
+                'uri'            => $row['uri'],
+                'calendar_id'    => (int) $row['calendarid'],
+                'calendar_name'  => $row['calendar_name'],
+                'calendar_color' => $row['calendarcolor'],
+            ], $parsed);
+        }
+        return $tasks;
+    }
+
+    /**
+     * Find a VTODO by ID across all of the user's calendars.
+     */
+    public static function findTaskByIdForUser(int $id, string $username): ?array
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare(
+            'SELECT co.id, co.uri, co.calendardata, co.calendarid,
+                    ci.displayname AS calendar_name, ci.calendarcolor
+             FROM calendarobjects co
+             JOIN calendarinstances ci ON co.calendarid = ci.calendarid
+             WHERE ci.principaluri = ? AND co.id = ? AND co.componenttype = \'VTODO\'
+             LIMIT 1'
+        );
+        $stmt->execute(["principals/{$username}", $id]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return null;
+        }
+        return array_merge([
+            'id'             => (int) $row['id'],
+            'uri'            => $row['uri'],
+            'calendar_id'    => (int) $row['calendarid'],
+            'calendar_name'  => $row['calendar_name'],
+            'calendar_color' => $row['calendarcolor'],
+        ], self::parseICal($row['calendardata']));
+    }
+
+    // -------------------------------------------------------
+
     private static function extractOccurrences(string $icalData): array
     {
         try {
@@ -877,10 +1011,17 @@ class CalendarEvent
                 if (isset($vcal->{$type})) {
                     $comp  = $vcal->{$type};
                     $start = isset($comp->DTSTART) ? $comp->DTSTART->getDateTime()->getTimestamp() : null;
+                    // For VTODO, fall back to DUE if no DTSTART
+                    if ($start === null && $type === 'VTODO' && isset($comp->DUE)) {
+                        try { $start = $comp->DUE->getDateTime()->getTimestamp(); } catch (\Exception $e) {}
+                    }
                     $end   = null;
                     if (isset($comp->DTEND)) {
                         $end = $comp->DTEND->getDateTime()->getTimestamp();
-                    } elseif ($start) {
+                    } elseif ($type === 'VTODO' && isset($comp->DUE)) {
+                        try { $end = $comp->DUE->getDateTime()->getTimestamp(); } catch (\Exception $e) {}
+                    }
+                    if ($end === null && $start !== null) {
                         $end = $start + 3600;
                     }
                     // For recurring events, extend lastoccurence for overlap queries

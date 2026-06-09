@@ -156,17 +156,17 @@
 [X] - Today button to jump to current month/date
 
 ## Task Management (VTODO) ##
-[ ] - Task list view separate from calendar
-[ ] - Task priorities
-[ ] - Task due dates
-[ ] - Task completion status
-[ ] - Task categories
-[ ] - Task reminders/alarms
+[X] - Task list view separate from calendar
+[X] - Task priorities
+[X] - Task due dates
+[X] - Task completion status
+[X] - Task categories
+[X] - Task reminders/alarms
 [ ] - Task dependencies (subtasks)
-[ ] - Task progress tracking
+[X] - Task progress tracking
 [ ] - Task assignment to other users
 [ ] - Task history/activity log
-[ ] - Task export to CSV/iCal
+[X] - Task export to CSV/iCal
 [ ] - Task import from iCal
 [ ] - Task synchronization with external task managers (Google Tasks, etc.)
 
@@ -186,6 +186,8 @@
 [ ] - User account locking/unlocking
 [ ] - User session management (view/terminate sessions)
 [ ] - User impersonation for support
+[ ] - Bulk user actions (delete, change role)
+
 
 ## Server Settings ##
 [X] - Application name configuration

@@ -108,8 +108,8 @@ Example `trusted_proxies` values:
 
 | Setting       | Value                                                              |
 |---------------|--------------------------------------------------------------------|
-| CardDAV URL   | `http://your-server/addressbooks/<username>/default/`              |
-| CalDAV URL    | `http://your-server/calendars/<username>/default/`                 |
+| CardDAV URL   | `http://your-server/addressbooks/<username>`              |
+| CalDAV URL    | `http://your-server/calendars/<username>`                 |
 | Username      | Your Cardy username                                                |
 | Password      | Your Cardy password                                                |
 

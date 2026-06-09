@@ -45,6 +45,7 @@ use Cardy\WebUI\Controllers\DashboardController;
 use Cardy\WebUI\Controllers\ContactsController;
 use Cardy\WebUI\Controllers\CalendarController;
 use Cardy\WebUI\Controllers\AdminController;
+use Cardy\WebUI\Controllers\TasksController;
 
 $routes = [
     'GET'  => [
@@ -69,6 +70,10 @@ $routes = [
         '/calendar/export'                => [CalendarController::class, 'exportCalendar'],
         '/calendar/import'                => [CalendarController::class, 'importCalendarForm'],
         '/calendar/{id}/edit'             => [CalendarController::class, 'edit'],
+        '/tasks'                          => [TasksController::class,   'index'],
+        '/tasks/new'                      => [TasksController::class,   'create'],
+        '/tasks/export'                   => [TasksController::class,   'exportTasks'],
+        '/tasks/{id}/edit'                => [TasksController::class,   'edit'],
         '/admin/users'                    => [AdminController::class,   'users'],
         '/admin/users/new'                => [AdminController::class,   'createUser'],
         '/admin/users/{id}/edit'          => [AdminController::class,   'editUser'],
@@ -99,6 +104,10 @@ $routes = [
         '/calendar/calendars/{id}/delete' => [CalendarController::class, 'deleteCalendarAction'],
         '/calendar/{id}'                  => [CalendarController::class, 'update'],
         '/calendar/{id}/delete'           => [CalendarController::class, 'delete'],
+        '/tasks'                          => [TasksController::class,   'store'],
+        '/tasks/{id}'                     => [TasksController::class,   'update'],
+        '/tasks/{id}/delete'              => [TasksController::class,   'delete'],
+        '/tasks/{id}/toggle'              => [TasksController::class,   'toggleComplete'],
         '/admin/users'                    => [AdminController::class,   'storeUser'],
         '/admin/users/{id}'               => [AdminController::class,   'updateUser'],
         '/admin/users/{id}/delete'        => [AdminController::class,   'deleteUser'],
