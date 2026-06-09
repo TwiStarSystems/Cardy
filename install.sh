@@ -386,6 +386,7 @@ info "Database server package: ${DB_SERVER_PKG}"
 apt-get install -y -qq \
     nginx \
     "php${PHP_VER}-fpm" \
+    "php${PHP_VER}-cli" \
     "php${PHP_VER}-mysql" \
     "php${PHP_VER}-xml" \
     "php${PHP_VER}-mbstring" \
@@ -428,7 +429,7 @@ success "Database configured."
 # -------- Copy application files ---------------------------
 header "Installing application files"
 
-mkdir -p "${CARDY_DIR}"/{dav,webui/assets/{css,js}}
+mkdir -p "${CARDY_DIR}"
 
 # Copy source
 rsync -a --exclude='config/config.php' --exclude='vendor/' \
@@ -531,12 +532,11 @@ success "Nginx configured."
 header "Configuring PHP upload limits"
 configure_php_upload_limits "${PHP_VER}"
 
-# -------- Set up document root symlinks ---------------------
+# -------- Patch nginx paths to install location -------------
 header "Setting up web roots"
 
-# Web root for DAV: public/dav/
-ln -sfn "${CARDY_DIR}/public/dav"    "${CARDY_DIR}/dav"
-ln -sfn "${CARDY_DIR}/public/webui"  "${CARDY_DIR}/webui"
+# nginx serves directly from ${CARDY_DIR}/public (DAV at public/dav,
+# Web UI at public/webui), so no extra document-root symlinks are needed.
 
 # Update nginx root path to the installed location
 sed -i "s|root /var/www/cardy/public;|root ${CARDY_DIR}/public;|" \
