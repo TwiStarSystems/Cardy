@@ -218,8 +218,11 @@ class TasksController extends Controller
             $this->flash('error', 'Failed to update task.');
         }
 
-        // Redirect back to referer or tasks list
         $back = $_SERVER['HTTP_REFERER'] ?? '/tasks';
+        // Only follow relative same-origin paths; reject absolute URLs and protocol-relative refs
+        if (!preg_match('/^\\/(?!\\/)/u', $back)) {
+            $back = '/tasks';
+        }
         $this->redirect($back);
     }
 
