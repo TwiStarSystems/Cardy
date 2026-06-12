@@ -1081,7 +1081,8 @@ class ContactsController extends Controller
         $this->verifyCsrf();
 
         $name  = trim((string) ($_POST['name'] ?? ''));
-        $color = trim((string) ($_POST['color'] ?? ''));
+        $raw   = trim((string) ($_POST['color'] ?? ''));
+        $color = preg_match('/^#[0-9a-fA-F]{6}$/', $raw) ? $raw : '';
 
         try {
             Contact::createGroup($user['username'], $name, $color);
@@ -1100,7 +1101,8 @@ class ContactsController extends Controller
 
         $groupId = (int) ($params['id'] ?? 0);
         $name    = trim((string) ($_POST['name'] ?? ''));
-        $color   = trim((string) ($_POST['color'] ?? ''));
+        $raw     = trim((string) ($_POST['color'] ?? ''));
+        $color   = preg_match('/^#[0-9a-fA-F]{6}$/', $raw) ? $raw : '';
 
         try {
             Contact::updateGroup($groupId, $user['username'], $name, $color);
