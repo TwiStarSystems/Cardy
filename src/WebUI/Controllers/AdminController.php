@@ -226,7 +226,8 @@ class AdminController extends Controller
         $config['app']['dav_url'] = $davUrl;
         $config['app']['trusted_proxies'] = $trustedProxies;
 
-        $php = "<?php\nreturn " . var_export($config, true) . ";\n";
+        $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $php  = "<?php\nreturn json_decode(<<<'JSON'\n{$json}\nJSON, true);\n";
         file_put_contents($path, $php, LOCK_EX);
 
         \Cardy\Config::load($path);
