@@ -57,7 +57,9 @@ class Contact
     private static function nextFreeLocalId(int $addressBookId): int
     {
         $pdo = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT local_id FROM cards WHERE addressbookid = ? AND local_id IS NOT NULL ORDER BY local_id ASC');
+        // FOR UPDATE holds a row-level lock until the caller commits, preventing two
+        // concurrent transactions from computing the same next ID.
+        $stmt = $pdo->prepare('SELECT local_id FROM cards WHERE addressbookid = ? AND local_id IS NOT NULL ORDER BY local_id ASC FOR UPDATE');
         $stmt->execute([$addressBookId]);
 
         $expected = 1;
@@ -847,13 +849,20 @@ class Contact
 
         $vcardData = $vcard->serialize();
         $uri = self::ensureUniqueUri($addressBookId, $uid . '.vcf');
-        $localId = self::nextFreeLocalId($addressBookId);
         $etag = md5($vcardData);
         $now = time();
 
-        $pdo->prepare(
-            'INSERT INTO cards (addressbookid, local_id, carddata, uri, lastmodified, etag, size) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )->execute([$addressBookId, $localId, $vcardData, $uri, $now, $etag, strlen($vcardData)]);
+        $pdo->beginTransaction();
+        try {
+            $localId = self::nextFreeLocalId($addressBookId);
+            $pdo->prepare(
+                'INSERT INTO cards (addressbookid, local_id, carddata, uri, lastmodified, etag, size) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            )->execute([$addressBookId, $localId, $vcardData, $uri, $now, $etag, strlen($vcardData)]);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
 
         $cardId = (int) $pdo->lastInsertId();
         self::bumpSyncToken($addressBookId, $uri, 1);
@@ -913,13 +922,20 @@ class Contact
         $data['uid'] = $uid;
         $vcardData = self::buildVCard($data);
         $uri      = self::ensureUniqueUri($abId, $uid . '.vcf');
-        $localId  = self::nextFreeLocalId($abId);
         $etag     = md5($vcardData);
         $now      = time();
 
-        $pdo->prepare(
-            'INSERT INTO cards (addressbookid, local_id, carddata, uri, lastmodified, etag, size) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )->execute([$abId, $localId, $vcardData, $uri, $now, $etag, strlen($vcardData)]);
+        $pdo->beginTransaction();
+        try {
+            $localId = self::nextFreeLocalId($abId);
+            $pdo->prepare(
+                'INSERT INTO cards (addressbookid, local_id, carddata, uri, lastmodified, etag, size) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            )->execute([$abId, $localId, $vcardData, $uri, $now, $etag, strlen($vcardData)]);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
 
         $cardId = (int) $pdo->lastInsertId();
         self::bumpSyncToken($abId, $uri, 1);
