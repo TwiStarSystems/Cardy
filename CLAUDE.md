@@ -25,14 +25,14 @@ password: Cert authentication (use the provided private key for authentication o
 
 When a bug is discovered (during a review, sanity check, or while working on something else), **file a GitHub issue for it** — one issue per distinct bug, using `gh issue create`. Do this even if you fix it in the same session, so there is a tracked record. Title the issue with the symptom, and in the body include the affected file/function, what goes wrong, and (if known) the fix. The repo is `TwiStarSystems/Cardy`.
 
-### Known open issues from 2026-06-12 full codebase audit
+### Issues from 2026-06-12 full codebase audit (all fixed)
 
 | Issue | Severity | File | Summary |
 |-------|----------|------|---------|
-| [#14](https://github.com/TwiStarSystems/Cardy/issues/14) | High | `src/WebUI/Controllers/TasksController.php:222` | Open redirect — `HTTP_REFERER` passed to `redirect()` without validation |
-| [#15](https://github.com/TwiStarSystems/Cardy/issues/15) | Medium | `src/WebUI/Controllers/ContactsController.php:1084,1103` | Contact group color not validated before DB storage (CSS injection risk) |
-| [#16](https://github.com/TwiStarSystems/Cardy/issues/16) | Medium | `src/WebUI/Controllers/AdminController.php:229` | Config file written via `var_export()` — should use JSON |
-| [#17](https://github.com/TwiStarSystems/Cardy/issues/17) | Low | `src/Models/Contact.php:57` | Race condition in `nextFreeLocalId()` — no transaction/lock between SELECT and INSERT |
+| [#14](https://github.com/TwiStarSystems/Cardy/issues/14) ✓ | High | `src/WebUI/Controllers/TasksController.php:222` | Open redirect — `HTTP_REFERER` passed to `redirect()` without validation |
+| [#15](https://github.com/TwiStarSystems/Cardy/issues/15) ✓ | Medium | `src/WebUI/Controllers/ContactsController.php:1084,1103` | Contact group color not validated before DB storage (CSS injection risk) |
+| [#16](https://github.com/TwiStarSystems/Cardy/issues/16) ✓ | Medium | `src/WebUI/Controllers/AdminController.php:229` | Config file written via `var_export()` — should use JSON |
+| [#17](https://github.com/TwiStarSystems/Cardy/issues/17) ✓ | Low | `src/Models/Contact.php:57` | Race condition in `nextFreeLocalId()` — no transaction/lock between SELECT and INSERT |
 
 ## Change workflow (commit + deploy)
 
