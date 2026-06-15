@@ -195,6 +195,21 @@ ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_secret`  VARCHAR(32)  NULL   
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_enabled` TINYINT(1)  NOT NULL DEFAULT 0;
 
 -- -------------------------------------------------------
+-- Audit log
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `audit_log` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `username`   VARCHAR(50)  NOT NULL DEFAULT '',
+    `action`     VARCHAR(60)  NOT NULL,
+    `detail`     TEXT,
+    `ip`         VARCHAR(45)  NOT NULL DEFAULT '',
+    `created_at` TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_username` (`username`),
+    KEY `idx_action`   (`action`),
+    KEY `idx_created`  (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------
 -- Login rate limiting
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `login_attempts` (

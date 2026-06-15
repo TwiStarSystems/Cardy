@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Cardy\WebUI\Controllers;
 
+use Cardy\Models\AuditLog;
 use Cardy\Models\User;
 use Cardy\WebUI\Controller;
 
@@ -84,6 +85,8 @@ class AdminController extends Controller
 
         try {
             User::create($username, $password, $email, $displayName, $role);
+            $admin = $_SESSION['user']['username'] ?? '';
+            AuditLog::record($admin, 'admin.user.create', "Created user '{$username}' (role: {$role})");
             $this->flash('success', "User '{$username}' created successfully.");
         } catch (\Exception $e) {
             $this->flash('error', 'Failed to create user: ' . $e->getMessage());
@@ -128,6 +131,8 @@ class AdminController extends Controller
         }
 
         User::update((int) $params['id'], $email, $displayName, $role);
+        $admin = $_SESSION['user']['username'] ?? '';
+        AuditLog::record($admin, 'admin.user.update', "Updated user '{$editUser['username']}' (role: {$role})");
 
         if (!empty($_POST['password'])) {
             if (strlen($_POST['password']) < 8) {
@@ -160,9 +165,22 @@ class AdminController extends Controller
             return;
         }
 
+        $target = User::findById((int) $params['id']);
         User::delete((int) $params['id']);
+        AuditLog::record($admin['username'], 'admin.user.delete', "Deleted user '" . ($target['username'] ?? $params['id']) . "'");
         $this->flash('success', 'User deleted.');
         $this->redirect('/admin/users');
+    }
+
+    public function auditLog(): void
+    {
+        $this->requireAdmin();
+        $filter = trim($_GET['action'] ?? '');
+        $this->render('admin/audit_log', [
+            'entries' => AuditLog::recent(300, $filter),
+            'filter'  => $filter,
+            'flash'   => $this->getFlash(),
+        ]);
     }
 
     public function serverSettings(): void
@@ -232,6 +250,8 @@ class AdminController extends Controller
 
         \Cardy\Config::load($path);
 
+        $adminUser = $_SESSION['user']['username'] ?? '';
+        AuditLog::record($adminUser, 'admin.server.update', "name={$name}, webui={$webuiUrl}, dav={$davUrl}");
         $this->flash('success', 'Server settings updated successfully.');
         $this->redirect('/admin/server');
     }

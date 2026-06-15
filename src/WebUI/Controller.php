@@ -75,6 +75,19 @@ class Controller
         if (empty($_SESSION['user_id'])) {
             $this->redirect('/login');
         }
+
+        // Idle session timeout (default 30 minutes)
+        $timeout = (int) \Cardy\Config::get('app.session_timeout', 1800);
+        $last    = $_SESSION['last_activity'] ?? 0;
+        if ($last > 0 && (time() - $last) > $timeout) {
+            $username = $_SESSION['user']['username'] ?? '';
+            session_destroy();
+            session_start();
+            \Cardy\Models\AuditLog::record($username, 'session.timeout', "Idle for >{$timeout}s");
+            $this->redirect('/login?reason=timeout');
+        }
+        $_SESSION['last_activity'] = time();
+
         return $_SESSION['user'];
     }
 

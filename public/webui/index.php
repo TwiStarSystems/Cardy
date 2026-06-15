@@ -81,6 +81,7 @@ $routes = [
         '/admin/users/new'                => [AdminController::class,   'createUser'],
         '/admin/users/{id}/edit'          => [AdminController::class,   'editUser'],
         '/admin/server'                   => [AdminController::class,   'serverSettings'],
+        '/admin/audit-log'                => [AdminController::class,   'auditLog'],
         '/account'                        => [AccountController::class, 'security'],
         '/account/app-passwords'          => [AccountController::class, 'appPasswords'],
         '/account/totp/cancel'            => [AccountController::class, 'totpCancel'],

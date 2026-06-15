@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Cardy\WebUI\Controllers;
 
 use Cardy\Models\AppPassword;
+use Cardy\Models\AuditLog;
 use Cardy\Models\User;
 use Cardy\Totp;
 use Cardy\WebUI\Controller;
@@ -54,6 +55,7 @@ class AccountController extends Controller
 
         User::enableTotp($user['id'], $secret);
         unset($_SESSION['totp_pending_secret']);
+        AuditLog::record($user['username'], 'totp.enabled');
         $this->flash('success', 'Two-factor authentication is now enabled.');
         $this->redirect('/account');
     }
@@ -64,6 +66,7 @@ class AccountController extends Controller
         $this->verifyCsrf();
         User::disableTotp($user['id']);
         unset($_SESSION['totp_pending_secret']);
+        AuditLog::record($user['username'], 'totp.disabled');
         $this->flash('success', 'Two-factor authentication has been disabled.');
         $this->redirect('/account');
     }
@@ -95,8 +98,10 @@ class AccountController extends Controller
             $this->redirect('/account');
         }
 
-        $token = AppPassword::create($user['username'], substr($name, 0, 100));
+        $label = substr($name, 0, 100);
+        $token = AppPassword::create($user['username'], $label);
         $_SESSION['new_app_token'] = $token;
+        AuditLog::record($user['username'], 'apppassword.create', "Label: {$label}");
         $this->redirect('/account');
     }
 
@@ -105,6 +110,7 @@ class AccountController extends Controller
         $user = $this->requireAuth();
         $this->verifyCsrf();
         AppPassword::delete((int) ($params['id'] ?? 0), $user['username']);
+        AuditLog::record($user['username'], 'apppassword.delete', "ID: " . (int) ($params['id'] ?? 0));
         $this->flash('success', 'App password revoked.');
         $this->redirect('/account');
     }
