@@ -338,7 +338,7 @@ $renderCard = function(array $c, string $type) use ($_ctrl, $csrf): void {
 <?php endif; ?>
 <?php endif; ?>
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 (function () {
   // ---------- Generic dropdown helper ----------
   function initDropdown(btnId, menuId) {

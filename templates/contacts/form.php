@@ -543,7 +543,7 @@ $c       = $contact ?? [];
   </div>
 </template>
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 (() => {
   const MAX_ENTRIES = 100;
 

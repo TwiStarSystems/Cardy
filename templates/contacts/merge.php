@@ -232,7 +232,7 @@ $pick = static fn($a, $b) => $a !== '' && $a !== null ? $a : $b;
   </form>
 </div>
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 var keepData    = <?= json_encode($keep, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 var discardData = <?= json_encode($other, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 

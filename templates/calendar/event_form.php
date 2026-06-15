@@ -299,7 +299,7 @@ $defDate = $date ?? date('Y-m-d');
   </div>
 </template>
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 function toggleAllDay(checked) {
   document.getElementById('start_time_group').style.display = checked ? 'none' : '';
   document.getElementById('end_time_group').style.display   = checked ? 'none' : '';

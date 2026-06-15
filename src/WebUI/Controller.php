@@ -8,12 +8,32 @@ namespace Cardy\WebUI;
  */
 class Controller
 {
+    private static string $nonce = '';
+
+    public static function initNonce(): void
+    {
+        self::$nonce = base64_encode(random_bytes(16));
+    }
+
+    public function nonce(): string
+    {
+        return self::$nonce;
+    }
+
     // -------------------------------------------------------
     // Response helpers
     // -------------------------------------------------------
 
     protected function render(string $template, array $data = []): void
     {
+        $nonce = self::$nonce;
+        if (!headers_sent()) {
+            header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+            header("X-Frame-Options: DENY");
+            header("X-Content-Type-Options: nosniff");
+            header("Referrer-Policy: same-origin");
+            header("Permissions-Policy: camera=(), microphone=(), geolocation=()");
+        }
         $data['_ctrl'] = $this;
         extract($data);
         $path = __DIR__ . '/../../templates/' . ltrim($template, '/') . '.php';

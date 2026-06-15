@@ -233,7 +233,7 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 </div>
 <?php endif; ?>
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 (function () {
   function initDropdown(btnId, menuId) {
     var btn  = document.getElementById(btnId);

@@ -27,6 +27,8 @@ ini_set('session.cookie_samesite', 'Lax');
 ini_set('session.cookie_secure', (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? '1' : '0');
 session_start();
 
+\Cardy\WebUI\Controller::initNonce();
+
 // -------------------------------------------------------
 // Simple front-controller router
 // -------------------------------------------------------
@@ -46,6 +48,7 @@ use Cardy\WebUI\Controllers\ContactsController;
 use Cardy\WebUI\Controllers\CalendarController;
 use Cardy\WebUI\Controllers\AdminController;
 use Cardy\WebUI\Controllers\TasksController;
+use Cardy\WebUI\Controllers\AccountController;
 
 $routes = [
     'GET'  => [
@@ -78,6 +81,7 @@ $routes = [
         '/admin/users/new'                => [AdminController::class,   'createUser'],
         '/admin/users/{id}/edit'          => [AdminController::class,   'editUser'],
         '/admin/server'                   => [AdminController::class,   'serverSettings'],
+        '/account/app-passwords'          => [AccountController::class, 'appPasswords'],
     ],
     'POST' => [
         '/login'                          => [AuthController::class,    'processLogin'],
@@ -112,6 +116,8 @@ $routes = [
         '/admin/users/{id}'               => [AdminController::class,   'updateUser'],
         '/admin/users/{id}/delete'        => [AdminController::class,   'deleteUser'],
         '/admin/server'                   => [AdminController::class,   'updateServerSettings'],
+        '/account/app-passwords'          => [AccountController::class, 'createAppPassword'],
+        '/account/app-passwords/{id}/delete' => [AccountController::class, 'deleteAppPassword'],
     ],
 ];
 

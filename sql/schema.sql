@@ -191,4 +191,17 @@ CREATE TABLE IF NOT EXISTS `contact_history` (
     KEY `idx_card_id` (`card_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- -------------------------------------------------------
+-- App-specific passwords (for DAV clients)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `app_passwords` (
+    `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `username`     VARCHAR(50) NOT NULL,
+    `name`         VARCHAR(100) NOT NULL,
+    `token_hash`   VARCHAR(255) NOT NULL,
+    `created_at`   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `last_used_at` TIMESTAMP NULL DEFAULT NULL,
+    KEY `idx_username` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET foreign_key_checks = 1;

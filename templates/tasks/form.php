@@ -198,7 +198,7 @@ $t      = $task ?? [];
 </form>
 </div>
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 function syncPercent(statusVal) {
     const pct = document.getElementById('percent_complete');
     const display = document.getElementById('pct_display');

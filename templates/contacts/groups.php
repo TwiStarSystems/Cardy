@@ -95,7 +95,7 @@ ob_start();
   <?php endif; ?>
 </div>
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 function toggleRename(id) {
   var el = document.getElementById('rename-' + id);
   if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; }

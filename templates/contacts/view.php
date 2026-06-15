@@ -275,8 +275,8 @@ $vcardText = \Cardy\Models\Contact::buildVCard($qrData);
 </div>
 <?php endif; ?>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSrmMzvUKfX6LNx5bFMkWokVISsTq7es2dkA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSrmMzvUKfX6LNx5bFMkWokVISsTq7es2dkA==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="<?= $_ctrl->nonce() ?>"></script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 (function() {
   var btn     = document.getElementById('qr-toggle');
   var section = document.getElementById('qr-section');

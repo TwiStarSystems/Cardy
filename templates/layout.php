@@ -79,6 +79,7 @@ if (!function_exists('navActive')) {
       <div class="avatar"><?= strtoupper(substr($currentUser['username'], 0, 2)) ?></div>
       <span><?= $_ctrl->e($currentUser['display_name'] ?: $currentUser['username']) ?> (<?= $_ctrl->e($currentUser['role'] ?? (!empty($currentUser['is_admin']) ? 'admin' : 'user')) ?>)</span>
     </div>
+    <a href="/account/app-passwords" class="btn btn-secondary btn-sm<?= str_starts_with($currentPath, '/account') ? ' active' : '' ?>">Account</a>
     <a href="/logout" class="btn btn-secondary btn-sm">Logout</a>
   </div>
   <?php endif; ?>

@@ -7,6 +7,7 @@ use Sabre\DAV\Auth\Backend\AbstractBasic;
 use Sabre\HTTP\RequestInterface;
 use Sabre\HTTP\ResponseInterface;
 use Cardy\Database;
+use Cardy\Models\AppPassword;
 
 /**
  * HTTP Basic Auth backend that validates against the Cardy users table
@@ -32,6 +33,10 @@ class Auth extends AbstractBasic
             return false;
         }
 
-        return password_verify($password, $row['password_hash']);
+        if (password_verify($password, $row['password_hash'])) {
+            return true;
+        }
+
+        return AppPassword::verify($username, $password);
     }
 }

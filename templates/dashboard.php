@@ -239,7 +239,7 @@ ob_start();
   </div><!-- /#dav-instructions -->
 </div><!-- /.dav-info -->
 
-<script>
+<script nonce="<?= $_ctrl->nonce() ?>">
 (function () {
   var select = document.getElementById('dav-client-select');
   var panel  = document.getElementById('dav-instructions');
