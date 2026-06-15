@@ -42,9 +42,14 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
           <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
         </svg>
       </button>
-      <div class="dropdown-menu" id="cal-switcher-menu" style="min-width:280px">
-        <div style="padding:8px 12px 4px;font-size:var(--text-xs);color:var(--color-text-muted);user-select:all" title="DAV URL for this calendar">
-          DAV: /calendars/<?= $_ctrl->e($user['username']) ?>/<?= $_ctrl->e($activeCal['uri'] ?? 'default') ?>/
+      <div class="dropdown-menu" id="cal-switcher-menu" style="min-width:300px">
+        <div style="padding:8px 12px 4px;font-size:var(--text-xs);color:var(--color-text-muted)">
+          <?php if ($activeCalIsOwned): ?>
+          <span style="user-select:all" title="DAV URL">DAV: /calendars/<?= $_ctrl->e($user['username']) ?>/<?= $_ctrl->e($activeCal['uri'] ?? 'default') ?>/</span>
+          <?php else: ?>
+          <span class="badge badge-muted">Shared by <?= $_ctrl->e($activeCal['owner_username'] ?? '') ?></span>
+          <?php if ($activeCalAccess === 3): ?><span class="badge badge-warning" style="margin-left:4px">Read-only</span><?php endif; ?>
+          <?php endif; ?>
         </div>
         <?php if (count($allCalendars) > 1): ?>
         <div class="dropdown-divider"></div>
@@ -56,7 +61,10 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
               <?php if ($cal['calendarcolor']): ?>
               <span style="width:10px;height:10px;border-radius:50%;background:<?= $_ctrl->e($cal['calendarcolor']) ?>;display:inline-block;flex-shrink:0"></span>
               <?php endif; ?>
-              <?= $_ctrl->e($cal['displayname']) ?>
+              <span style="flex:1"><?= $_ctrl->e($cal['displayname']) ?></span>
+              <?php if ((int)($cal['access'] ?? 1) !== 1): ?>
+              <span class="badge badge-muted" style="font-size:10px">Shared</span>
+              <?php endif; ?>
             </button>
           </form>
           <?php endif; ?>
@@ -100,8 +108,43 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             <button type="submit" class="btn btn-primary btn-sm">Save</button>
           </form>
         </div>
+        <?php /* Share this calendar — only for owned calendars */ ?>
+        <?php if ($activeCalIsOwned): ?>
+        <div class="dropdown-divider"></div>
+        <button type="button" class="dropdown-item" id="cal-share-toggle" style="display:flex;align-items:center;gap:6px">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+          Share...
+        </button>
+        <div id="cal-share-form" style="display:none;padding:8px 12px">
+          <?php if (!empty($activeCalShares)): ?>
+          <div style="margin-bottom:8px">
+            <?php foreach ($activeCalShares as $share): ?>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:var(--text-sm)">
+              <span style="flex:1"><?= $_ctrl->e($share['username']) ?></span>
+              <span class="badge badge-muted"><?= $share['can_write'] ? 'R/W' : 'Read-only' ?></span>
+              <form method="POST" action="/calendar/calendars/<?= (int)$activeCalId ?>/shares/<?= $_ctrl->e($share['username']) ?>/delete" style="display:inline">
+                <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
+                <button type="submit" class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--color-danger,#e53e3e)"
+                        onclick="return confirm('Remove <?= $_ctrl->e($share['username']) ?>\'s access?')">✕</button>
+              </form>
+            </div>
+            <?php endforeach; ?>
+          </div>
+          <?php endif; ?>
+          <form method="POST" action="/calendar/calendars/<?= (int)$activeCalId ?>/share">
+            <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
+            <input type="text" name="shared_with" class="form-control" placeholder="Username to share with" required
+                   style="margin-bottom:6px;font-size:var(--text-sm)" maxlength="50">
+            <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-sm);margin-bottom:6px;cursor:pointer">
+              <input type="checkbox" name="read_only" value="1"> Read-only
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm">Share</button>
+          </form>
+        </div>
+        <?php endif; ?>
         <?php if (count($allCalendars) > 1): ?>
         <div class="dropdown-divider"></div>
+        <?php if ($activeCalIsOwned): ?>
         <form method="POST" action="/calendar/calendars/<?= (int)($activeCalId ?? 0) ?>/delete" style="display:contents">
           <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
           <button type="submit" class="dropdown-item text-danger"
@@ -112,16 +155,30 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             Delete This Calendar
           </button>
         </form>
+        <?php else: ?>
+        <form method="POST" action="/calendar/calendars/<?= (int)($activeCalId ?? 0) ?>/delete" style="display:contents">
+          <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
+          <button type="submit" class="dropdown-item" style="color:var(--color-danger,#e53e3e)"
+                  onclick="return confirm('Remove this shared calendar from your list?')">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--color-danger,#e53e3e)">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            Remove from My Calendars
+          </button>
+        </form>
+        <?php endif; ?>
         <?php endif; ?>
       </div>
     </div><!-- end cal-switcher-dropdown -->
 
+    <?php if ($activeCalAccess !== 3): ?>
     <a href="/calendar/new?date=<?= $year ?>-<?= str_pad((string) $month, 2, '0', STR_PAD_LEFT) ?>-01" class="btn btn-primary">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
       </svg>
       New Event
     </a>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -253,8 +310,10 @@ $weekdays  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   initDropdown('cal-switcher-btn', 'cal-switcher-menu');
   var createToggle = document.getElementById('cal-create-toggle');
   var renameToggle = document.getElementById('cal-rename-toggle');
+  var shareToggle  = document.getElementById('cal-share-toggle');
   if (createToggle) createToggle.addEventListener('click', function (e) { e.stopPropagation(); togglePanel('cal-create-form'); });
   if (renameToggle) renameToggle.addEventListener('click', function (e) { e.stopPropagation(); togglePanel('cal-rename-form'); });
+  if (shareToggle)  shareToggle.addEventListener('click',  function (e) { e.stopPropagation(); togglePanel('cal-share-form'); });
 })();
 </script>
 

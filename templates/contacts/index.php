@@ -38,10 +38,15 @@ $qs = static function(array $extra) use ($search, $sort, $category, $groupFilter
           <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
         </svg>
       </button>
-      <div class="dropdown-menu" id="ab-switcher-menu" style="min-width:260px">
+      <div class="dropdown-menu" id="ab-switcher-menu" style="min-width:300px">
         <?php /* Current book info */ ?>
-        <div style="padding:8px 12px 4px;font-size:var(--text-xs);color:var(--color-text-muted);user-select:all" title="DAV URL for this address book">
-          DAV: /addressbooks/<?= $_ctrl->e($user['username']) ?>/<?= $_ctrl->e($activeBook['uri'] ?? 'default') ?>/
+        <div style="padding:8px 12px 4px;font-size:var(--text-xs);color:var(--color-text-muted)">
+          <?php if ($activeBookIsOwned): ?>
+          <span style="user-select:all" title="DAV URL">DAV: /addressbooks/<?= $_ctrl->e($user['username']) ?>/<?= $_ctrl->e($activeBook['uri'] ?? 'default') ?>/</span>
+          <?php else: ?>
+          <span class="badge badge-muted">Shared by <?= $_ctrl->e($activeBook['owner'] ?? '') ?></span>
+          <?php if (!$activeBookCanWrite): ?><span class="badge badge-warning" style="margin-left:4px">Read-only</span><?php endif; ?>
+          <?php endif; ?>
         </div>
         <?php if (count($allAddressBooks) > 1): ?>
         <div class="dropdown-divider"></div>
@@ -49,8 +54,11 @@ $qs = static function(array $extra) use ($search, $sort, $category, $groupFilter
           <?php if ((int)$book['id'] !== (int)($activeAbId ?? 0)): ?>
           <form method="POST" action="/contacts/addressbooks/<?= (int)$book['id'] ?>/switch" style="display:contents">
             <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
-            <button type="submit" class="dropdown-item" style="display:flex;justify-content:space-between;align-items:center">
-              <span><?= $_ctrl->e($book['displayname']) ?></span>
+            <button type="submit" class="dropdown-item" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <span style="flex:1"><?= $_ctrl->e($book['displayname']) ?></span>
+              <?php if ((bool)($book['is_shared'] ?? false)): ?>
+              <span class="badge badge-muted" style="font-size:10px">Shared</span>
+              <?php endif; ?>
               <span class="badge badge-muted" style="font-size:var(--text-xs)"><?= (int)$book['card_count'] ?></span>
             </button>
           </form>
@@ -71,7 +79,8 @@ $qs = static function(array $extra) use ($search, $sort, $category, $groupFilter
             <button type="submit" class="btn btn-primary btn-sm">Create</button>
           </form>
         </div>
-        <?php /* Rename current */ ?>
+        <?php if ($activeBookIsOwned): ?>
+        <?php /* Rename current — only for owned books */ ?>
         <button type="button" class="dropdown-item" id="ab-rename-toggle" style="display:flex;align-items:center;gap:6px">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
           Rename...
@@ -86,6 +95,52 @@ $qs = static function(array $extra) use ($search, $sort, $category, $groupFilter
             <button type="submit" class="btn btn-primary btn-sm">Rename</button>
           </form>
         </div>
+        <?php /* Share this address book — only for owned books */ ?>
+        <div class="dropdown-divider"></div>
+        <button type="button" class="dropdown-item" id="ab-share-toggle" style="display:flex;align-items:center;gap:6px">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+          Share...
+        </button>
+        <div id="ab-share-form" style="display:none;padding:8px 12px">
+          <?php if (!empty($activeBookShares)): ?>
+          <div style="margin-bottom:8px">
+            <?php foreach ($activeBookShares as $share): ?>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:var(--text-sm)">
+              <span style="flex:1"><?= $_ctrl->e($share['shared_with']) ?></span>
+              <span class="badge badge-muted"><?= $share['can_write'] ? 'R/W' : 'Read-only' ?></span>
+              <form method="POST" action="/contacts/addressbooks/<?= (int)$activeAbId ?>/shares/<?= $_ctrl->e($share['shared_with']) ?>/delete" style="display:inline">
+                <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
+                <button type="submit" class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--color-danger,#e53e3e)"
+                        onclick="return confirm('Remove <?= $_ctrl->e($share['shared_with']) ?>\'s access?')">✕</button>
+              </form>
+            </div>
+            <?php endforeach; ?>
+          </div>
+          <?php endif; ?>
+          <form method="POST" action="/contacts/addressbooks/<?= (int)$activeAbId ?>/share">
+            <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
+            <input type="text" name="shared_with" class="form-control" placeholder="Username to share with" required
+                   style="margin-bottom:6px;font-size:var(--text-sm)" maxlength="50">
+            <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-sm);margin-bottom:6px;cursor:pointer">
+              <input type="checkbox" name="can_write" value="1"> Allow editing
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm">Share</button>
+          </form>
+        </div>
+        <?php else: ?>
+        <?php /* Leave shared address book — only for non-owned books */ ?>
+        <div class="dropdown-divider"></div>
+        <form method="POST" action="/contacts/addressbooks/<?= (int)($activeAbId ?? 0) ?>/delete" style="display:contents">
+          <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
+          <button type="submit" class="dropdown-item" style="color:var(--color-danger,#e53e3e)"
+                  onclick="return confirm('Remove this shared address book from your list?')">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;color:var(--color-danger,#e53e3e)">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            Remove from My Books
+          </button>
+        </form>
+        <?php endif; ?>
       </div>
     </div><!-- end ab-switcher-dropdown -->
 
@@ -169,12 +224,14 @@ $qs = static function(array $extra) use ($search, $sort, $category, $groupFilter
       </svg>
       Select
     </button>
+    <?php if ($activeBookCanWrite): ?>
     <a href="/contacts/new" class="btn btn-primary">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
       </svg>
       New Contact
     </a>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -365,6 +422,7 @@ $renderCard = function(array $c, string $type) use ($_ctrl, $csrf): void {
   }
   togglePanel('ab-create-toggle', 'ab-create-form');
   togglePanel('ab-rename-toggle', 'ab-rename-form');
+  togglePanel('ab-share-toggle',  'ab-share-form');
 
   // ---------- Bulk selection ----------
   var selectModeBtn  = document.getElementById('select-mode-btn');

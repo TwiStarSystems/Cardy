@@ -35,11 +35,122 @@ class CalendarEvent
     {
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare(
-            'SELECT ci.calendarid, ci.displayname, ci.calendarcolor, ci.description, ci.uri
-             FROM calendarinstances ci WHERE ci.principaluri = ? ORDER BY ci.calendarid ASC'
+            'SELECT ci.calendarid, ci.displayname, ci.calendarcolor, ci.description, ci.uri, ci.access,
+                    REPLACE(oci.principaluri, \'principals/\', \'\') AS owner_username
+             FROM calendarinstances ci
+             LEFT JOIN calendarinstances oci
+                 ON oci.calendarid = ci.calendarid AND oci.access = 1
+             WHERE ci.principaluri = ?
+             ORDER BY ci.access ASC, ci.calendarid ASC'
         );
         $stmt->execute(["principals/{$username}"]);
         return $stmt->fetchAll();
+    }
+
+    public static function getSharesForCalendar(int $calendarId, string $ownerUsername): array
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM calendarinstances WHERE calendarid = ? AND principaluri = ? AND access = 1'
+        );
+        $stmt->execute([$calendarId, "principals/{$ownerUsername}"]);
+        if (!$stmt->fetch()) {
+            return [];
+        }
+        $stmt = $pdo->prepare(
+            'SELECT REPLACE(principaluri, \'principals/\', \'\') AS username, access
+             FROM calendarinstances WHERE calendarid = ? AND access != 1'
+        );
+        $stmt->execute([$calendarId]);
+        $shares = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $shares[] = [
+                'username'  => $row['username'],
+                'can_write' => (int) $row['access'] === 2,
+            ];
+        }
+        return $shares;
+    }
+
+    public static function shareCalendar(int $calendarId, string $ownerUsername, string $shareWithUsername, bool $readOnly): void
+    {
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare(
+            'SELECT calendarid FROM calendarinstances WHERE calendarid = ? AND principaluri = ? AND access = 1'
+        );
+        $stmt->execute([$calendarId, "principals/{$ownerUsername}"]);
+        if (!$stmt->fetch()) {
+            throw new \RuntimeException('Calendar not found or you are not the owner.');
+        }
+        if ($ownerUsername === $shareWithUsername) {
+            throw new \RuntimeException('Cannot share a calendar with yourself.');
+        }
+        $stmt = $pdo->prepare('SELECT username FROM users WHERE username = ?');
+        $stmt->execute([$shareWithUsername]);
+        if (!$stmt->fetch()) {
+            throw new \RuntimeException("User '{$shareWithUsername}' not found.");
+        }
+        $access = $readOnly ? 3 : 2;
+        $stmt = $pdo->prepare(
+            'SELECT ci.displayname, ci.calendarcolor, ci.uri FROM calendarinstances ci WHERE ci.calendarid = ? AND ci.access = 1'
+        );
+        $stmt->execute([$calendarId]);
+        $calInfo = $stmt->fetch();
+
+        $stmt = $pdo->prepare('SELECT id FROM calendarinstances WHERE calendarid = ? AND principaluri = ?');
+        $stmt->execute([$calendarId, "principals/{$shareWithUsername}"]);
+        $existing = $stmt->fetch();
+
+        if ($existing) {
+            $pdo->prepare('UPDATE calendarinstances SET access = ? WHERE id = ?')
+                ->execute([$access, $existing['id']]);
+        } else {
+            $baseSlug = $ownerUsername . '-' . ($calInfo['uri'] ?? 'shared');
+            $slug     = $baseSlug;
+            $i        = 2;
+            while (true) {
+                $check = $pdo->prepare('SELECT id FROM calendarinstances WHERE principaluri = ? AND uri = ?');
+                $check->execute(["principals/{$shareWithUsername}", $slug]);
+                if (!$check->fetch()) {
+                    break;
+                }
+                $slug = $baseSlug . '-' . $i++;
+            }
+            $pdo->prepare(
+                'INSERT INTO calendarinstances
+                    (calendarid, principaluri, access, displayname, calendarcolor, uri, share_href, share_invitestatus)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 2)'
+            )->execute([
+                $calendarId,
+                "principals/{$shareWithUsername}",
+                $access,
+                $calInfo['displayname'] ?? 'Shared Calendar',
+                $calInfo['calendarcolor'] ?? '#9600E1',
+                $slug,
+                "principals/{$shareWithUsername}",
+            ]);
+        }
+    }
+
+    public static function unshareCalendar(int $calendarId, string $ownerUsername, string $shareWithUsername): void
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare(
+            'SELECT calendarid FROM calendarinstances WHERE calendarid = ? AND principaluri = ? AND access = 1'
+        );
+        $stmt->execute([$calendarId, "principals/{$ownerUsername}"]);
+        if (!$stmt->fetch()) {
+            return;
+        }
+        $pdo->prepare('DELETE FROM calendarinstances WHERE calendarid = ? AND principaluri = ? AND access != 1')
+            ->execute([$calendarId, "principals/{$shareWithUsername}"]);
+    }
+
+    public static function removeSelfFromSharedCalendar(int $calendarId, string $username): void
+    {
+        $pdo = Database::getInstance();
+        $pdo->prepare('DELETE FROM calendarinstances WHERE calendarid = ? AND principaluri = ? AND access != 1')
+            ->execute([$calendarId, "principals/{$username}"]);
     }
 
     // -------------------------------------------------------

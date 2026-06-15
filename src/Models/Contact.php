@@ -126,21 +126,123 @@ class Contact
         return $slug;
     }
 
+    private static bool $sharesTableChecked = false;
+
+    private static function ensureSharesTable(): void
+    {
+        if (self::$sharesTableChecked) {
+            return;
+        }
+        Database::getInstance()->exec(
+            "CREATE TABLE IF NOT EXISTS `addressbook_shares` (
+                `id`             INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                `addressbook_id` INT UNSIGNED NOT NULL,
+                `shared_with`    VARCHAR(50)  NOT NULL,
+                `can_write`      TINYINT(1)   NOT NULL DEFAULT 0,
+                `created_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY `idx_ab_user` (`addressbook_id`, `shared_with`),
+                FOREIGN KEY (`addressbook_id`) REFERENCES `addressbooks` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+        self::$sharesTableChecked = true;
+    }
+
     /**
-     * Returns all address books for a user with their contact count.
+     * Returns all address books visible to a user: their own plus shared ones.
+     * Each row includes is_shared (0/1), can_write (0/1), and owner (username string).
      */
     public static function getAllAddressBooksForUser(string $username): array
     {
         $pdo  = Database::getInstance();
         $stmt = $pdo->prepare(
             'SELECT ab.id, ab.uri, ab.displayname,
-                    (SELECT COUNT(*) FROM cards c WHERE c.addressbookid = ab.id) AS card_count
+                    (SELECT COUNT(*) FROM cards c WHERE c.addressbookid = ab.id) AS card_count,
+                    0 AS is_shared, 1 AS can_write, ? AS owner
              FROM addressbooks ab
              WHERE ab.principaluri = ?
              ORDER BY ab.id ASC'
         );
-        $stmt->execute(["principals/{$username}"]);
+        $stmt->execute([$username, "principals/{$username}"]);
+        $ownBooks = $stmt->fetchAll();
+
+        self::ensureSharesTable();
+        $stmt = $pdo->prepare(
+            'SELECT ab.id, ab.uri, ab.displayname,
+                    (SELECT COUNT(*) FROM cards c WHERE c.addressbookid = ab.id) AS card_count,
+                    1 AS is_shared, s.can_write,
+                    REPLACE(ab.principaluri, \'principals/\', \'\') AS owner
+             FROM addressbook_shares s
+             JOIN addressbooks ab ON ab.id = s.addressbook_id
+             WHERE s.shared_with = ?
+             ORDER BY ab.id ASC'
+        );
+        $stmt->execute([$username]);
+        return array_merge($ownBooks, $stmt->fetchAll());
+    }
+
+    public static function shareAddressBook(int $abId, string $ownerUsername, string $shareWithUsername, bool $canWrite): void
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT id FROM addressbooks WHERE id = ? AND principaluri = ?');
+        $stmt->execute([$abId, "principals/{$ownerUsername}"]);
+        if (!$stmt->fetch()) {
+            throw new \RuntimeException('Address book not found or you are not the owner.');
+        }
+        if ($ownerUsername === $shareWithUsername) {
+            throw new \RuntimeException('Cannot share with yourself.');
+        }
+        $stmt = $pdo->prepare('SELECT username FROM users WHERE username = ?');
+        $stmt->execute([$shareWithUsername]);
+        if (!$stmt->fetch()) {
+            throw new \RuntimeException("User '{$shareWithUsername}' not found.");
+        }
+        self::ensureSharesTable();
+        $pdo->prepare(
+            'INSERT INTO addressbook_shares (addressbook_id, shared_with, can_write) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE can_write = VALUES(can_write)'
+        )->execute([$abId, $shareWithUsername, $canWrite ? 1 : 0]);
+    }
+
+    public static function unshareAddressBook(int $abId, string $ownerUsername, string $shareWithUsername): void
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT id FROM addressbooks WHERE id = ? AND principaluri = ?');
+        $stmt->execute([$abId, "principals/{$ownerUsername}"]);
+        if (!$stmt->fetch()) {
+            return;
+        }
+        self::ensureSharesTable();
+        $pdo->prepare('DELETE FROM addressbook_shares WHERE addressbook_id = ? AND shared_with = ?')
+            ->execute([$abId, $shareWithUsername]);
+    }
+
+    public static function getSharesForAddressBook(int $abId, string $ownerUsername): array
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT id FROM addressbooks WHERE id = ? AND principaluri = ?');
+        $stmt->execute([$abId, "principals/{$ownerUsername}"]);
+        if (!$stmt->fetch()) {
+            return [];
+        }
+        self::ensureSharesTable();
+        $stmt = $pdo->prepare('SELECT shared_with, can_write FROM addressbook_shares WHERE addressbook_id = ?');
+        $stmt->execute([$abId]);
         return $stmt->fetchAll();
+    }
+
+    public static function canUserWriteAddressBook(int $abId, string $username): bool
+    {
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT id FROM addressbooks WHERE id = ? AND principaluri = ?');
+        $stmt->execute([$abId, "principals/{$username}"]);
+        if ($stmt->fetch()) {
+            return true;
+        }
+        self::ensureSharesTable();
+        $stmt = $pdo->prepare('SELECT can_write FROM addressbook_shares WHERE addressbook_id = ? AND shared_with = ?');
+        $stmt->execute([$abId, $username]);
+        $row = $stmt->fetch();
+        return $row ? (bool) $row['can_write'] : false;
     }
 
     /**

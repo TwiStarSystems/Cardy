@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Cardy\WebUI\Controllers;
 
+use Cardy\Models\AuditLog;
 use Cardy\Models\Contact;
 use Cardy\WebUI\Controller;
 
@@ -35,6 +36,14 @@ class ContactsController extends Controller
     private function setActiveAddressBookId(string $username, int $id): void
     {
         $_SESSION['active_ab_' . $username] = $id;
+    }
+
+    private function activeBookIsWritable(string $username, ?int $abId): bool
+    {
+        if ($abId === null) {
+            return true;
+        }
+        return Contact::canUserWriteAddressBook($abId, $username);
     }
 
     // -------------------------------------------------------
@@ -82,20 +91,29 @@ class ContactsController extends Controller
 
         $allGroups = Contact::getAllGroups($user['username'], $activeAbId);
 
+        $activeBookIsOwned  = !(bool) ($activeBook['is_shared'] ?? false);
+        $activeBookCanWrite = $activeBookIsOwned || (bool) ($activeBook['can_write'] ?? false);
+        $activeBookShares   = $activeBookIsOwned
+            ? Contact::getSharesForAddressBook((int) $activeAbId, $user['username'])
+            : [];
+
         $this->render('contacts/index', [
-            'user'            => $user,
-            'contacts'        => $contacts,
-            'allGroups'       => $allGroups,
-            'allAddressBooks' => $allAddressBooks,
-            'activeBook'      => $activeBook,
-            'activeAbId'      => $activeAbId,
-            'search'          => $search,
-            'sort'            => $sort,
-            'category'        => $category,
-            'groupFilter'     => $groupFilter,
-            'starredOnly'     => $starredOnly,
-            'csrf'            => $this->csrfToken(),
-            'flash'           => $this->getFlash(),
+            'user'               => $user,
+            'contacts'           => $contacts,
+            'allGroups'          => $allGroups,
+            'allAddressBooks'    => $allAddressBooks,
+            'activeBook'         => $activeBook,
+            'activeAbId'         => $activeAbId,
+            'activeBookIsOwned'  => $activeBookIsOwned,
+            'activeBookCanWrite' => $activeBookCanWrite,
+            'activeBookShares'   => $activeBookShares,
+            'search'             => $search,
+            'sort'               => $sort,
+            'category'           => $category,
+            'groupFilter'        => $groupFilter,
+            'starredOnly'        => $starredOnly,
+            'csrf'               => $this->csrfToken(),
+            'flash'              => $this->getFlash(),
         ]);
     }
 
@@ -278,7 +296,12 @@ class ContactsController extends Controller
         $user       = $this->requireAuth();
         $this->verifyCsrf();
         $activeAbId = $this->getActiveAddressBookId($user['username']);
-        $data       = $this->extractFormData();
+        if (!$this->activeBookIsWritable($user['username'], $activeAbId)) {
+            $this->flash('error', 'This address book is read-only.');
+            $this->redirect('/contacts');
+            return;
+        }
+        $data = $this->extractFormData();
 
         try {
             Contact::create($user['username'], $data, $activeAbId);
@@ -313,7 +336,12 @@ class ContactsController extends Controller
         $user       = $this->requireAuth();
         $this->verifyCsrf();
         $activeAbId = $this->getActiveAddressBookId($user['username']);
-        $contact    = Contact::findById((int) $params['id'], $user['username'], $activeAbId);
+        if (!$this->activeBookIsWritable($user['username'], $activeAbId)) {
+            $this->flash('error', 'This address book is read-only.');
+            $this->redirect('/contacts/' . $params['id']);
+            return;
+        }
+        $contact = Contact::findById((int) $params['id'], $user['username'], $activeAbId);
         if (!$contact) {
             $this->abort(404, 'Contact not found.');
         }
@@ -336,6 +364,11 @@ class ContactsController extends Controller
         $user       = $this->requireAuth();
         $this->verifyCsrf();
         $activeAbId = $this->getActiveAddressBookId($user['username']);
+        if (!$this->activeBookIsWritable($user['username'], $activeAbId)) {
+            $this->flash('error', 'This address book is read-only.');
+            $this->redirect('/contacts');
+            return;
+        }
         Contact::delete((int) $params['id'], $user['username'], $activeAbId);
         $this->flash('success', 'Contact deleted.');
         $this->redirect('/contacts');
@@ -1272,15 +1305,68 @@ class ContactsController extends Controller
         $this->verifyCsrf();
         $id       = (int) $params['id'];
         $activeId = $this->getActiveAddressBookId($user['username']);
+
+        // Determine if this is an owned or shared book
+        $allBooks   = Contact::getAllAddressBooksForUser($user['username']);
+        $targetBook = null;
+        foreach ($allBooks as $book) {
+            if ((int) $book['id'] === $id) {
+                $targetBook = $book;
+                break;
+            }
+        }
+
         try {
-            Contact::deleteAddressBook($id, $user['username']);
+            if ($targetBook !== null && (bool) ($targetBook['is_shared'] ?? false)) {
+                // Sharee removes a shared book from their list
+                Contact::unshareAddressBook($id, (string) ($targetBook['owner'] ?? ''), $user['username']);
+                $this->flash('success', 'Shared address book removed from your list.');
+            } else {
+                Contact::deleteAddressBook($id, $user['username']);
+                $this->flash('success', 'Address book deleted.');
+            }
             if ($activeId === $id) {
                 unset($_SESSION['active_ab_' . $user['username']]);
             }
-            $this->flash('success', 'Address book deleted.');
         } catch (\Exception $e) {
             $this->flash('error', $e->getMessage());
         }
+        $this->redirect('/contacts');
+    }
+
+    public function shareAddressBookAction(array $params): void
+    {
+        $user      = $this->requireAuth();
+        $this->verifyCsrf();
+        $abId      = (int) $params['id'];
+        $shareWith = trim($_POST['shared_with'] ?? '');
+        $canWrite  = !empty($_POST['can_write']);
+
+        if ($shareWith === '') {
+            $this->flash('error', 'Please enter a username to share with.');
+            $this->redirect('/contacts');
+            return;
+        }
+        try {
+            Contact::shareAddressBook($abId, $user['username'], $shareWith, $canWrite);
+            AuditLog::record($user['username'], 'addressbook.share', "Book {$abId} shared with {$shareWith}");
+            $this->flash('success', "Address book shared with '{$shareWith}'.");
+        } catch (\Exception $e) {
+            $this->flash('error', $e->getMessage());
+        }
+        $this->redirect('/contacts');
+    }
+
+    public function unshareAddressBookAction(array $params): void
+    {
+        $user      = $this->requireAuth();
+        $this->verifyCsrf();
+        $abId      = (int) $params['id'];
+        $shareWith = $params['username'] ?? '';
+
+        Contact::unshareAddressBook($abId, $user['username'], $shareWith);
+        AuditLog::record($user['username'], 'addressbook.unshare', "Book {$abId} unshared from {$shareWith}");
+        $this->flash('success', 'Share removed.');
         $this->redirect('/contacts');
     }
 

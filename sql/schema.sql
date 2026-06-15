@@ -234,4 +234,17 @@ CREATE TABLE IF NOT EXISTS `app_passwords` (
     KEY `idx_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- -------------------------------------------------------
+-- Address book sharing (web UI only)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `addressbook_shares` (
+    `id`             INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `addressbook_id` INT UNSIGNED NOT NULL,
+    `shared_with`    VARCHAR(50)  NOT NULL,
+    `can_write`      TINYINT(1)   NOT NULL DEFAULT 0,
+    `created_at`     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `idx_ab_user` (`addressbook_id`, `shared_with`),
+    FOREIGN KEY (`addressbook_id`) REFERENCES `addressbooks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET foreign_key_checks = 1;

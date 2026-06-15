@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Cardy\WebUI\Controllers;
 
+use Cardy\Models\AuditLog;
 use Cardy\Models\CalendarEvent;
 use Cardy\WebUI\Controller;
 
@@ -35,6 +36,23 @@ class CalendarController extends Controller
     private function setActiveCalendarId(string $username, int $id): void
     {
         $_SESSION['active_cal_' . $username] = $id;
+    }
+
+    private function getActiveCalendar(string $username): ?array
+    {
+        $id   = $this->getActiveCalendarId($username);
+        foreach (CalendarEvent::getCalendarsForUser($username) as $cal) {
+            if ((int) $cal['calendarid'] === $id) {
+                return $cal;
+            }
+        }
+        return null;
+    }
+
+    private function activeCalIsWritable(string $username): bool
+    {
+        $cal = $this->getActiveCalendar($username);
+        return $cal === null || (int) ($cal['access'] ?? 1) !== 3;
     }
 
     // -------------------------------------------------------
@@ -78,17 +96,26 @@ class CalendarController extends Controller
             }
         }
 
+        $activeCalAccess  = (int) ($activeCal['access'] ?? 1);
+        $activeCalIsOwned = $activeCalAccess === 1;
+        $activeCalShares  = $activeCalIsOwned
+            ? CalendarEvent::getSharesForCalendar((int) $activeCalId, $user['username'])
+            : [];
+
         $this->render('calendar/index', [
-            'user'         => $user,
-            'year'         => $year,
-            'month'        => $month,
-            'events'       => $events,
-            'eventMap'     => $eventMap,
-            'allCalendars' => $allCalendars,
-            'activeCal'    => $activeCal,
-            'activeCalId'  => $activeCalId,
-            'csrf'         => $this->csrfToken(),
-            'flash'        => $this->getFlash(),
+            'user'             => $user,
+            'year'             => $year,
+            'month'            => $month,
+            'events'           => $events,
+            'eventMap'         => $eventMap,
+            'allCalendars'     => $allCalendars,
+            'activeCal'        => $activeCal,
+            'activeCalId'      => $activeCalId,
+            'activeCalAccess'  => $activeCalAccess,
+            'activeCalIsOwned' => $activeCalIsOwned,
+            'activeCalShares'  => $activeCalShares,
+            'csrf'             => $this->csrfToken(),
+            'flash'            => $this->getFlash(),
         ]);
     }
 
@@ -109,6 +136,11 @@ class CalendarController extends Controller
     {
         $user       = $this->requireAuth();
         $this->verifyCsrf();
+        if (!$this->activeCalIsWritable($user['username'])) {
+            $this->flash('error', 'This calendar is read-only.');
+            $this->redirect('/calendar');
+            return;
+        }
         $activeCalId = $this->getActiveCalendarId($user['username']);
         $data        = $this->extractFormData();
 
@@ -145,6 +177,11 @@ class CalendarController extends Controller
     {
         $user        = $this->requireAuth();
         $this->verifyCsrf();
+        if (!$this->activeCalIsWritable($user['username'])) {
+            $this->flash('error', 'This calendar is read-only.');
+            $this->redirect('/calendar');
+            return;
+        }
         $activeCalId = $this->getActiveCalendarId($user['username']);
         $event       = CalendarEvent::findById((int) $params['id'], $user['username'], $activeCalId);
         if (!$event) {
@@ -168,6 +205,11 @@ class CalendarController extends Controller
     {
         $user        = $this->requireAuth();
         $this->verifyCsrf();
+        if (!$this->activeCalIsWritable($user['username'])) {
+            $this->flash('error', 'This calendar is read-only.');
+            $this->redirect('/calendar');
+            return;
+        }
         $activeCalId = $this->getActiveCalendarId($user['username']);
         CalendarEvent::delete((int) $params['id'], $user['username'], $activeCalId);
         $this->flash('success', 'Event deleted.');
@@ -241,15 +283,60 @@ class CalendarController extends Controller
         $this->verifyCsrf();
         $id       = (int) $params['id'];
         $activeId = $this->getActiveCalendarId($user['username']);
+        $cal      = $this->getActiveCalendar($user['username']);
+        $access   = (int) ($cal['access'] ?? 1);
+
         try {
-            CalendarEvent::deleteCalendar($id, $user['username']);
+            if ($access !== 1) {
+                // Sharee removing a shared calendar from their list
+                CalendarEvent::removeSelfFromSharedCalendar($id, $user['username']);
+                $this->flash('success', 'Shared calendar removed from your list.');
+            } else {
+                CalendarEvent::deleteCalendar($id, $user['username']);
+                $this->flash('success', 'Calendar deleted.');
+            }
             if ($activeId === $id) {
                 unset($_SESSION['active_cal_' . $user['username']]);
             }
-            $this->flash('success', 'Calendar deleted.');
         } catch (\Exception $e) {
             $this->flash('error', $e->getMessage());
         }
+        $this->redirect('/calendar');
+    }
+
+    public function shareCalendarAction(array $params): void
+    {
+        $user      = $this->requireAuth();
+        $this->verifyCsrf();
+        $calId     = (int) $params['id'];
+        $shareWith = trim($_POST['shared_with'] ?? '');
+        $readOnly  = !empty($_POST['read_only']);
+
+        if ($shareWith === '') {
+            $this->flash('error', 'Please enter a username to share with.');
+            $this->redirect('/calendar');
+            return;
+        }
+        try {
+            CalendarEvent::shareCalendar($calId, $user['username'], $shareWith, $readOnly);
+            AuditLog::record($user['username'], 'calendar.share', "Calendar {$calId} shared with {$shareWith}");
+            $this->flash('success', "Calendar shared with '{$shareWith}'.");
+        } catch (\Exception $e) {
+            $this->flash('error', $e->getMessage());
+        }
+        $this->redirect('/calendar');
+    }
+
+    public function unshareCalendarAction(array $params): void
+    {
+        $user      = $this->requireAuth();
+        $this->verifyCsrf();
+        $calId     = (int) $params['id'];
+        $shareWith = $params['username'] ?? '';
+
+        CalendarEvent::unshareCalendar($calId, $user['username'], $shareWith);
+        AuditLog::record($user['username'], 'calendar.unshare', "Calendar {$calId} unshared from {$shareWith}");
+        $this->flash('success', 'Share removed.');
         $this->redirect('/calendar');
     }
 

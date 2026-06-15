@@ -19,6 +19,10 @@ $actionLabels = [
     'admin.user.update'   => ['User updated',   'badge-gold'],
     'admin.user.delete'   => ['User deleted',   'badge-error'],
     'admin.server.update' => ['Server updated', 'badge-gold'],
+    'calendar.share'      => ['Cal shared',     'badge-muted'],
+    'calendar.unshare'    => ['Cal unshared',   'badge-muted'],
+    'addressbook.share'   => ['Book shared',    'badge-muted'],
+    'addressbook.unshare' => ['Book unshared',  'badge-muted'],
 ];
 
 $filterOptions = [
