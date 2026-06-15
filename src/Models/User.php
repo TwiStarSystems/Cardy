@@ -82,6 +82,20 @@ class User
         return $row ? self::normalizeUserRow($row) : null;
     }
 
+    public static function findByEmail(string $email): ?array
+    {
+        if ($email === '') {
+            return null;
+        }
+        self::ensureRoleColumn();
+        self::ensureQuotaColumns();
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, contact_quota, event_quota, created_at FROM users WHERE email = ? LIMIT 1');
+        $stmt->execute([$email]);
+        $row = $stmt->fetch() ?: null;
+        return $row ? self::normalizeUserRow($row) : null;
+    }
+
     public static function findByUsername(string $username): ?array
     {
         self::ensureRoleColumn();

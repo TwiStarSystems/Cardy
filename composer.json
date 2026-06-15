@@ -5,7 +5,8 @@
     "license": "MIT",
     "require": {
         "php": ">=8.1",
-        "sabre/dav": "^4.6"
+        "sabre/dav": "^4.6",
+        "phpmailer/phpmailer": "^7.1"
     },
     "autoload": {
         "psr-4": {

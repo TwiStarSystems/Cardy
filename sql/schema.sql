@@ -249,4 +249,17 @@ CREATE TABLE IF NOT EXISTS `addressbook_shares` (
     FOREIGN KEY (`addressbook_id`) REFERENCES `addressbooks` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- -------------------------------------------------------
+-- Password reset tokens
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `password_resets` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `username`   VARCHAR(50)  NOT NULL,
+    `token_hash` VARCHAR(64)  NOT NULL,
+    `expires_at` TIMESTAMP    NOT NULL,
+    `created_at` TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `idx_token`    (`token_hash`),
+    KEY        `idx_username` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET foreign_key_checks = 1;

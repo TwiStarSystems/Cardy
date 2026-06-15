@@ -27,6 +27,9 @@ $appName = \Cardy\Config::get('app.name', 'Cardy');
     <?php if (!empty($error)): ?>
     <div class="alert alert-error"><?= $_ctrl->e($error) ?></div>
     <?php endif; ?>
+    <?php if (!empty($success)): ?>
+    <div class="alert alert-success"><?= $_ctrl->e($success) ?></div>
+    <?php endif; ?>
 
     <form method="POST" action="/login">
       <input type="hidden" name="_csrf" value="<?= $_ctrl->e($csrf) ?>">
@@ -63,6 +66,12 @@ $appName = \Cardy\Config::get('app.name', 'Cardy');
         Sign In
       </button>
     </form>
+
+    <?php if (!empty($mailConfigured)): ?>
+    <div style="text-align:center;margin-top:var(--spacing-md)">
+      <a href="/forgot-password" style="font-size:var(--text-sm);color:var(--color-text-muted)">Forgot your password?</a>
+    </div>
+    <?php endif; ?>
   </div>
 </div>
 </body>

@@ -3,8 +3,10 @@ declare(strict_types=1);
 
 namespace Cardy\WebUI\Controllers;
 
+use Cardy\Mail\Mailer;
 use Cardy\Models\AuditLog;
 use Cardy\Models\LoginAttempt;
+use Cardy\Models\PasswordReset;
 use Cardy\Models\User;
 use Cardy\Totp;
 use Cardy\WebUI\Controller;
@@ -18,11 +20,19 @@ class AuthController extends Controller
         }
         unset($_SESSION['totp_pending_id'], $_SESSION['totp_pending_at']);
 
-        $error = match ($_GET['reason'] ?? '') {
-            'timeout' => 'Your session expired due to inactivity. Please sign in again.',
-            default   => null,
+        $error   = null;
+        $success = null;
+        match ($_GET['reason'] ?? '') {
+            'timeout'        => $error   = 'Your session expired due to inactivity. Please sign in again.',
+            'password_reset' => $success = 'Your password has been reset. You can now sign in.',
+            default          => null,
         };
-        $this->render('login', ['csrf' => $this->csrfToken(), 'error' => $error]);
+        $this->render('login', [
+            'csrf'    => $this->csrfToken(),
+            'error'   => $error,
+            'success' => $success,
+            'mailConfigured' => Mailer::isConfigured(),
+        ]);
     }
 
     public function processLogin(): void
@@ -128,6 +138,98 @@ class AuthController extends Controller
         $_SESSION['last_activity'] = time();
         AuditLog::record($user['username'], 'login.success', '2FA verified');
         $this->redirect('/dashboard');
+    }
+
+    public function showForgotPassword(): void
+    {
+        $this->render('forgot_password', [
+            'csrf'           => $this->csrfToken(),
+            'mailConfigured' => Mailer::isConfigured(),
+        ]);
+    }
+
+    public function processForgotPassword(): void
+    {
+        $this->verifyCsrf();
+        $email = trim($_POST['email'] ?? '');
+
+        // Always show the same success message to prevent user enumeration.
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) && Mailer::isConfigured()) {
+            $user = User::findByEmail($email);
+            if ($user) {
+                try {
+                    $token    = PasswordReset::create($user['username']);
+                    $resetUrl = \Cardy\Config::get('app.webui_url', '') . '/reset-password?token=' . $token;
+                    Mailer::sendPasswordReset($email, $user['display_name'] ?: $user['username'], $resetUrl);
+                    AuditLog::record($user['username'], 'auth.password_reset_requested', "Reset sent to {$email}");
+                } catch (\Exception) {
+                    // swallow — don't reveal whether email was found
+                }
+            }
+        }
+
+        $this->render('forgot_password', [
+            'csrf'           => $this->csrfToken(),
+            'mailConfigured' => Mailer::isConfigured(),
+            'success'        => 'If an account with that email exists, a reset link has been sent.',
+        ]);
+    }
+
+    public function showResetPassword(): void
+    {
+        $token    = trim($_GET['token'] ?? '');
+        $username = $token ? PasswordReset::verify($token) : null;
+
+        $this->render('reset_password', [
+            'csrf'  => $this->csrfToken(),
+            'token' => $username ? $token : '',
+            'error' => $username ? null : 'This reset link is invalid or has expired.',
+        ]);
+    }
+
+    public function processResetPassword(): void
+    {
+        $this->verifyCsrf();
+        $token    = trim($_POST['token'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $confirm  = $_POST['confirm']  ?? '';
+
+        $username = $token ? PasswordReset::verify($token) : null;
+        if (!$username) {
+            $this->render('reset_password', [
+                'csrf'  => $this->csrfToken(),
+                'token' => '',
+                'error' => 'This reset link is invalid or has expired.',
+            ]);
+            return;
+        }
+
+        if (strlen($password) < 8) {
+            $this->render('reset_password', [
+                'csrf'  => $this->csrfToken(),
+                'token' => $token,
+                'error' => 'Password must be at least 8 characters.',
+            ]);
+            return;
+        }
+
+        if ($password !== $confirm) {
+            $this->render('reset_password', [
+                'csrf'  => $this->csrfToken(),
+                'token' => $token,
+                'error' => 'Passwords do not match.',
+            ]);
+            return;
+        }
+
+        $user = User::findByUsername($username);
+        if ($user) {
+            User::updatePassword((int) $user['id'], $password);
+        }
+        PasswordReset::consume($token);
+        AuditLog::record($username, 'auth.password_reset_completed');
+
+        $this->redirect('/login?reason=password_reset');
     }
 
     public function logout(): void

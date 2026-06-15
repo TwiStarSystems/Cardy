@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Cardy\WebUI\Controllers;
 
+use Cardy\Mail\Mailer;
 use Cardy\Models\AuditLog;
 use Cardy\Models\User;
 use Cardy\WebUI\Controller;
@@ -88,6 +89,14 @@ class AdminController extends Controller
             $admin = $_SESSION['user']['username'] ?? '';
             AuditLog::record($admin, 'admin.user.create', "Created user '{$username}' (role: {$role})");
             $this->flash('success', "User '{$username}' created successfully.");
+            if ($email !== '' && Mailer::isConfigured()) {
+                try {
+                    $loginUrl = \Cardy\Config::get('app.webui_url', '') . '/login';
+                    Mailer::sendWelcome($email, $displayName ?: $username, $username, $loginUrl);
+                } catch (\Exception) {
+                    // welcome email failure is non-fatal
+                }
+            }
         } catch (\Exception $e) {
             $this->flash('error', 'Failed to create user: ' . $e->getMessage());
         }
@@ -199,6 +208,91 @@ class AdminController extends Controller
             'eventBytes'    => $eventBytes,
             'flash'         => $this->getFlash(),
         ]);
+    }
+
+    public function mailSettings(): void
+    {
+        $this->requireAdmin();
+        $this->render('admin/mail', [
+            'csrf'  => $this->csrfToken(),
+            'flash' => $this->getFlash(),
+            'mail'  => [
+                'host'         => (string) \Cardy\Config::get('mail.host', ''),
+                'port'         => (int)    \Cardy\Config::get('mail.port', 587),
+                'encryption'   => (string) \Cardy\Config::get('mail.encryption', 'tls'),
+                'username'     => (string) \Cardy\Config::get('mail.username', ''),
+                'from_address' => (string) \Cardy\Config::get('mail.from_address', ''),
+                'from_name'    => (string) \Cardy\Config::get('mail.from_name', 'Cardy'),
+            ],
+        ]);
+    }
+
+    public function updateMailSettings(): void
+    {
+        $this->requireAdmin();
+        $this->verifyCsrf();
+
+        $path   = $this->configPath();
+        $config = require $path;
+
+        $host        = trim((string) ($_POST['host']         ?? ''));
+        $port        = max(1, min(65535, (int) ($_POST['port'] ?? 587)));
+        $encryption  = in_array($_POST['encryption'] ?? '', ['tls','ssl','none'], true) ? $_POST['encryption'] : 'tls';
+        $username    = trim((string) ($_POST['username']     ?? ''));
+        $fromAddress = trim((string) ($_POST['from_address'] ?? ''));
+        $fromName    = trim((string) ($_POST['from_name']    ?? 'Cardy'));
+        $password    = $_POST['password'] ?? '';
+
+        if ($fromName === '') {
+            $fromName = 'Cardy';
+        }
+
+        if ($fromAddress !== '' && !filter_var($fromAddress, FILTER_VALIDATE_EMAIL)) {
+            $this->flash('error', 'From address must be a valid email address.');
+            $this->redirect('/admin/mail');
+            return;
+        }
+
+        $config['mail'] = [
+            'host'         => $host,
+            'port'         => $port,
+            'encryption'   => $encryption,
+            'username'     => $username,
+            'password'     => $password !== '' ? $password : (string) \Cardy\Config::get('mail.password', ''),
+            'from_address' => $fromAddress,
+            'from_name'    => $fromName,
+        ];
+
+        $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $php  = "<?php\nreturn json_decode(<<<'JSON'\n{$json}\nJSON, true);\n";
+        file_put_contents($path, $php, LOCK_EX);
+        \Cardy\Config::load($path);
+
+        $admin = $_SESSION['user']['username'] ?? '';
+        AuditLog::record($admin, 'admin.mail.update', "host={$host}:{$port}, encryption={$encryption}");
+        $this->flash('success', 'Mail settings saved.');
+        $this->redirect('/admin/mail');
+    }
+
+    public function testMail(): void
+    {
+        $this->requireAdmin();
+        $this->verifyCsrf();
+
+        $to = trim($_POST['test_to'] ?? '');
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            $this->flash('error', 'Please enter a valid email address to send the test to.');
+            $this->redirect('/admin/mail');
+            return;
+        }
+
+        try {
+            Mailer::sendTest($to, $to);
+            $this->flash('success', "Test email sent to {$to}. Check your inbox.");
+        } catch (\Exception $e) {
+            $this->flash('error', 'Test email failed: ' . $e->getMessage());
+        }
+        $this->redirect('/admin/mail');
     }
 
     public function auditLog(): void

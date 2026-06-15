@@ -761,9 +761,10 @@ class CalendarEvent
         }
 
         // Quota check
-        $quotaRow = $pdo->prepare('SELECT event_quota FROM users WHERE username = ?');
+        $quotaRow = $pdo->prepare('SELECT event_quota, email, display_name FROM users WHERE username = ?');
         $quotaRow->execute([$username]);
-        $quota = (int) ($quotaRow->fetchColumn() ?: 0);
+        $quotaInfo = $quotaRow->fetch() ?: [];
+        $quota = (int) ($quotaInfo['event_quota'] ?? 0);
         if ($quota > 0) {
             $countRow = $pdo->prepare(
                 'SELECT COUNT(DISTINCT co.id)
@@ -773,6 +774,17 @@ class CalendarEvent
             );
             $countRow->execute(["principals/{$username}"]);
             if ((int) $countRow->fetchColumn() >= $quota) {
+                $userEmail = (string) ($quotaInfo['email'] ?? '');
+                if ($userEmail !== '' && \Cardy\Mail\Mailer::isConfigured()) {
+                    try {
+                        \Cardy\Mail\Mailer::sendQuotaExceeded(
+                            $userEmail,
+                            (string) ($quotaInfo['display_name'] ?: $username),
+                            'event',
+                            $quota
+                        );
+                    } catch (\Exception) {}
+                }
                 throw new \RuntimeException("Calendar event quota of {$quota} reached. Ask your admin to increase your limit.");
             }
         }

@@ -29,4 +29,16 @@ return [
         // Example: '/var/log/cardy/dav-access.log'
         'dav_log_file'   => '',
     ],
+    'mail' => [
+        // Set host to enable email features (password reset, welcome emails, quota alerts).
+        'host'         => '',
+        'port'         => 587,
+        // Encryption: 'tls' (STARTTLS, recommended), 'ssl' (implicit TLS), or 'none'
+        'encryption'   => 'tls',
+        // Leave username/password empty if the SMTP server does not require auth.
+        'username'     => '',
+        'password'     => '',
+        'from_address' => '',
+        'from_name'    => 'Cardy',
+    ],
 ];

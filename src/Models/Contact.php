@@ -1021,9 +1021,10 @@ class Contact
         }
 
         // Quota check
-        $quotaRow = $pdo->prepare('SELECT contact_quota FROM users WHERE username = ?');
+        $quotaRow = $pdo->prepare('SELECT contact_quota, email, display_name FROM users WHERE username = ?');
         $quotaRow->execute([$username]);
-        $quota = (int) ($quotaRow->fetchColumn() ?: 0);
+        $quotaInfo = $quotaRow->fetch() ?: [];
+        $quota = (int) ($quotaInfo['contact_quota'] ?? 0);
         if ($quota > 0) {
             $countRow = $pdo->prepare(
                 'SELECT COUNT(*) FROM cards c
@@ -1032,6 +1033,17 @@ class Contact
             );
             $countRow->execute(["principals/{$username}"]);
             if ((int) $countRow->fetchColumn() >= $quota) {
+                $userEmail = (string) ($quotaInfo['email'] ?? '');
+                if ($userEmail !== '' && \Cardy\Mail\Mailer::isConfigured()) {
+                    try {
+                        \Cardy\Mail\Mailer::sendQuotaExceeded(
+                            $userEmail,
+                            (string) ($quotaInfo['display_name'] ?: $username),
+                            'contact',
+                            $quota
+                        );
+                    } catch (\Exception) {}
+                }
                 throw new \RuntimeException("Contact quota of {$quota} reached. Ask your admin to increase your limit.");
             }
         }
