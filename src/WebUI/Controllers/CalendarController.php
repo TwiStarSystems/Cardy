@@ -216,6 +216,25 @@ class CalendarController extends Controller
         $this->redirect('/calendar');
     }
 
+    public function moveEvent(array $params): void
+    {
+        $user    = $this->requireAuth();
+        $this->verifyCsrf();
+        if (!$this->activeCalIsWritable($user['username'])) {
+            $this->json(['ok' => false, 'error' => 'Read-only calendar'], 403);
+            return;
+        }
+        $newDate = trim($_POST['new_date'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $newDate)) {
+            $this->json(['ok' => false, 'error' => 'Invalid date'], 400);
+            return;
+        }
+        $activeCalId = $this->getActiveCalendarId($user['username']);
+        CalendarEvent::moveEvent((int) $params['id'], $user['username'], $newDate, $activeCalId);
+        AuditLog::record($user['username'], 'event.move', "Event #{$params['id']} moved to {$newDate}");
+        $this->json(['ok' => true]);
+    }
+
     // -------------------------------------------------------
     // Calendar management endpoints
     // -------------------------------------------------------

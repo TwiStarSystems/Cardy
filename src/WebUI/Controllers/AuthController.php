@@ -5,6 +5,7 @@ namespace Cardy\WebUI\Controllers;
 
 use Cardy\Mail\Mailer;
 use Cardy\Models\AuditLog;
+use Cardy\Models\InviteToken;
 use Cardy\Models\LoginAttempt;
 use Cardy\Models\PasswordReset;
 use Cardy\Models\User;
@@ -25,6 +26,7 @@ class AuthController extends Controller
         match ($_GET['reason'] ?? '') {
             'timeout'        => $error   = 'Your session expired due to inactivity. Please sign in again.',
             'password_reset' => $success = 'Your password has been reset. You can now sign in.',
+            'signup'         => $success = 'Your account has been created. Sign in below.',
             default          => null,
         };
         $this->render('login', [
@@ -138,6 +140,92 @@ class AuthController extends Controller
         $_SESSION['last_activity'] = time();
         AuditLog::record($user['username'], 'login.success', '2FA verified');
         $this->redirect('/dashboard');
+    }
+
+    public function showSignup(): void
+    {
+        $token = trim($_GET['token'] ?? '');
+        $invite = $token ? InviteToken::find($token) : null;
+        if (!$invite) {
+            $this->render('signup', [
+                'csrf'   => $this->csrfToken(),
+                'error'  => 'This invite link is invalid, expired, or has already been used.',
+                'valid'  => false,
+            ]);
+            return;
+        }
+        $this->render('signup', [
+            'csrf'   => $this->csrfToken(),
+            'token'  => $token,
+            'invite' => $invite,
+            'valid'  => true,
+        ]);
+    }
+
+    public function processSignup(): void
+    {
+        $this->verifyCsrf();
+        $token  = trim($_POST['token'] ?? '');
+        $invite = $token ? InviteToken::find($token) : null;
+
+        if (!$invite) {
+            $this->render('signup', [
+                'csrf'  => $this->csrfToken(),
+                'error' => 'This invite link is invalid, expired, or has already been used.',
+                'valid' => false,
+            ]);
+            return;
+        }
+
+        $username    = trim($_POST['username']    ?? '');
+        $password    = $_POST['password']         ?? '';
+        $email       = trim($_POST['email']       ?? '');
+        $displayName = trim($_POST['display_name'] ?? '');
+
+        $errors = [];
+        if (strlen($username) < 2 || !preg_match('/^[a-z0-9_\-]+$/i', $username)) {
+            $errors[] = 'Username must be at least 2 characters (letters, numbers, hyphens, underscores).';
+        }
+        if (strlen($password) < 8) {
+            $errors[] = 'Password must be at least 8 characters.';
+        }
+        if (User::findByUsername($username)) {
+            $errors[] = 'That username is already taken.';
+        }
+
+        if ($errors) {
+            $this->render('signup', [
+                'csrf'   => $this->csrfToken(),
+                'token'  => $token,
+                'invite' => $invite,
+                'valid'  => true,
+                'errors' => $errors,
+                'post'   => $_POST,
+            ]);
+            return;
+        }
+
+        try {
+            User::create($username, $password, $email, $displayName, 'user');
+            InviteToken::consume($token);
+            AuditLog::record($username, 'signup', "Invited by {$invite['created_by']}");
+            if ($email !== '' && Mailer::isConfigured()) {
+                try {
+                    $loginUrl = \Cardy\Config::get('app.webui_url', '') . '/login';
+                    Mailer::sendWelcome($email, $displayName ?: $username, $username, $loginUrl);
+                } catch (\Exception) {}
+            }
+            $this->redirect('/login?reason=signup');
+        } catch (\Exception $e) {
+            $this->render('signup', [
+                'csrf'   => $this->csrfToken(),
+                'token'  => $token,
+                'invite' => $invite,
+                'valid'  => true,
+                'errors' => ['Account creation failed: ' . $e->getMessage()],
+                'post'   => $_POST,
+            ]);
+        }
     }
 
     public function showForgotPassword(): void

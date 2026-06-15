@@ -57,7 +57,8 @@ $weekLabel = $weekStart->format('M j') . ' – ' . $weekEnd->format('M j, Y');
   </div>
   <div style="display:grid;grid-template-columns:repeat(7,1fr);min-height:280px;align-items:start">
     <?php foreach ($days as $d): ?>
-    <div style="border-right:1px solid var(--color-border);padding:6px;min-height:200px">
+    <div class="week-drop-zone" data-date="<?= $d['dateKey'] ?>"
+         style="border-right:1px solid var(--color-border);padding:6px;min-height:200px">
       <?php if (empty($d['events'])): ?>
       <a href="/calendar/new?date=<?= $d['dateKey'] ?>" class="text-xs text-muted"
          style="opacity:.4;font-size:var(--text-xs)">+ Add</a>
@@ -65,7 +66,10 @@ $weekLabel = $weekStart->format('M j') . ' – ' . $weekEnd->format('M j, Y');
       <?php foreach ($d['events'] as $ev): ?>
       <?php if ($ev['id'] !== null): ?>
       <a href="/calendar/<?= (int) $ev['id'] ?>/edit"
-         class="calendar-event-pill" style="display:block;margin-bottom:3px"
+         class="calendar-event-pill week-draggable" style="display:block;margin-bottom:3px"
+         draggable="true"
+         data-event-id="<?= (int) $ev['id'] ?>"
+         data-event-date="<?= $d['dateKey'] ?>"
          title="<?= $_ctrl->e($ev['summary']) ?>">
         <?= $_ctrl->e($ev['all_day'] ? $ev['summary'] : ($ev['start_time'] . ' ' . $ev['summary'])) ?>
       </a>
@@ -80,6 +84,49 @@ $weekLabel = $weekStart->format('M j') . ' – ' . $weekEnd->format('M j, Y');
     <?php endforeach; ?>
   </div>
 </div>
+
+<script nonce="<?= $_ctrl->nonce() ?>">
+(function () {
+  var csrf = <?= json_encode($csrf ?? '') ?>;
+  var dragging = null;
+
+  document.querySelectorAll('.week-draggable').forEach(function (el) {
+    el.addEventListener('dragstart', function (e) {
+      dragging = { id: el.dataset.eventId, date: el.dataset.eventDate };
+      e.dataTransfer.effectAllowed = 'move';
+      el.style.opacity = '0.4';
+    });
+    el.addEventListener('dragend', function () {
+      el.style.opacity = '';
+      dragging = null;
+    });
+  });
+
+  document.querySelectorAll('.week-drop-zone').forEach(function (zone) {
+    zone.addEventListener('dragover', function (e) {
+      if (dragging) { e.preventDefault(); zone.style.background = 'var(--color-bg-subtle)'; }
+    });
+    zone.addEventListener('dragleave', function () {
+      zone.style.background = '';
+    });
+    zone.addEventListener('drop', function (e) {
+      e.preventDefault();
+      zone.style.background = '';
+      if (!dragging) return;
+      var newDate = zone.dataset.date;
+      if (newDate === dragging.date) return;
+
+      var fd = new FormData();
+      fd.append('_csrf', csrf);
+      fd.append('new_date', newDate);
+      fetch('/calendar/' + dragging.id + '/move', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j.ok) location.reload(); else alert('Move failed: ' + (j.error || 'unknown error')); })
+        .catch(function () { alert('Move failed — network error.'); });
+    });
+  });
+}());
+</script>
 
 <?php
 $content   = ob_get_clean();

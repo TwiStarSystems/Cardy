@@ -5,6 +5,7 @@ namespace Cardy\WebUI\Controllers;
 
 use Cardy\Mail\Mailer;
 use Cardy\Models\AuditLog;
+use Cardy\Models\InviteToken;
 use Cardy\Models\User;
 use Cardy\WebUI\Controller;
 
@@ -208,6 +209,138 @@ class AdminController extends Controller
             'eventBytes'    => $eventBytes,
             'flash'         => $this->getFlash(),
         ]);
+    }
+
+    public function backupPage(): void
+    {
+        $this->requireAdmin();
+        $this->render('admin/backup', [
+            'flash' => $this->getFlash(),
+            'csrf'  => $this->csrfToken(),
+        ]);
+    }
+
+    public function backupDownload(): void
+    {
+        $this->requireAdmin();
+        $this->verifyCsrf();
+
+        $pdo      = \Cardy\Database::getInstance();
+        $appName  = \Cardy\Config::get('app.name', 'Cardy');
+        $filename = 'cardy-backup-' . date('Y-m-d') . '.zip';
+
+        $tmp = tempnam(sys_get_temp_dir(), 'cardy_backup_');
+        $zip = new \ZipArchive();
+        if ($zip->open($tmp, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            $this->flash('error', 'Could not create ZIP archive.');
+            $this->redirect('/admin/backup');
+            return;
+        }
+
+        $manifest = [
+            'app'         => $appName,
+            'exported_at' => date('c'),
+            'version'     => '1',
+        ];
+        $zip->addFromString('manifest.json', json_encode($manifest, JSON_PRETTY_PRINT));
+
+        // Export contacts: one combined .vcf per address book
+        $books = $pdo->query(
+            "SELECT ab.id, ab.uri, ab.displayname, REPLACE(ab.principaluri,'principals/','') AS username
+             FROM addressbooks ab ORDER BY ab.principaluri, ab.id"
+        )->fetchAll();
+        foreach ($books as $book) {
+            $cards = $pdo->prepare('SELECT carddata FROM cards WHERE addressbookid = ?');
+            $cards->execute([$book['id']]);
+            $vcf = '';
+            foreach ($cards->fetchAll() as $card) {
+                $vcf .= $card['carddata'] . "\r\n";
+            }
+            if ($vcf !== '') {
+                $zip->addFromString(
+                    "contacts/{$book['username']}/{$book['uri']}.vcf",
+                    $vcf
+                );
+            }
+        }
+
+        // Export calendars: one .ics per calendar instance
+        $cals = $pdo->query(
+            "SELECT ci.calendarid, ci.uri, ci.displayname,
+                    REPLACE(ci.principaluri,'principals/','') AS username
+             FROM calendarinstances ci WHERE ci.access = 1 ORDER BY ci.principaluri, ci.calendarid"
+        )->fetchAll();
+        foreach ($cals as $cal) {
+            $objs = $pdo->prepare('SELECT calendardata FROM calendarobjects WHERE calendarid = ?');
+            $objs->execute([$cal['calendarid']]);
+            $rows = $objs->fetchAll();
+            if (empty($rows)) {
+                continue;
+            }
+            $ics  = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Cardy//EN\r\n";
+            foreach ($rows as $obj) {
+                // Strip outer VCALENDAR wrapper and concatenate components
+                $inner = preg_replace('/^BEGIN:VCALENDAR.*?(\r?\n)/si', '', $obj['calendardata']);
+                $inner = preg_replace('/END:VCALENDAR\s*$/si', '', $inner ?? '');
+                $ics  .= trim($inner) . "\r\n";
+            }
+            $ics .= "END:VCALENDAR\r\n";
+            $zip->addFromString(
+                "calendars/{$cal['username']}/{$cal['uri']}.ics",
+                $ics
+            );
+        }
+
+        $zip->close();
+
+        $admin = $_SESSION['user']['username'] ?? '';
+        AuditLog::record($admin, 'admin.backup.download', 'Full backup downloaded');
+
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . filesize($tmp));
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        readfile($tmp);
+        unlink($tmp);
+        exit;
+    }
+
+    public function invites(): void
+    {
+        $this->requireAdmin();
+        $this->render('admin/invites', [
+            'invites'  => InviteToken::all(),
+            'csrf'     => $this->csrfToken(),
+            'flash'    => $this->getFlash(),
+            'signupBase' => rtrim((string) \Cardy\Config::get('app.webui_url', ''), '/') . '/signup?token=',
+        ]);
+    }
+
+    public function createInvite(): void
+    {
+        $this->requireAdmin();
+        $this->verifyCsrf();
+
+        $note     = trim($_POST['note'] ?? '');
+        $maxUses  = max(1, (int) ($_POST['max_uses']    ?? 1));
+        $expDays  = ($_POST['expires_in'] ?? '') !== '' ? max(1, (int) $_POST['expires_in']) : null;
+        $admin    = $_SESSION['user']['username'] ?? '';
+
+        InviteToken::create($admin, $note, $maxUses, $expDays);
+        AuditLog::record($admin, 'admin.invite.create', "note={$note}, max_uses={$maxUses}");
+        $this->flash('success', 'Invite link created.');
+        $this->redirect('/admin/invites');
+    }
+
+    public function deleteInvite(array $params): void
+    {
+        $this->requireAdmin();
+        $this->verifyCsrf();
+        InviteToken::delete((int) $params['id']);
+        $admin = $_SESSION['user']['username'] ?? '';
+        AuditLog::record($admin, 'admin.invite.delete', "Invite #{$params['id']} revoked");
+        $this->flash('success', 'Invite revoked.');
+        $this->redirect('/admin/invites');
     }
 
     public function mailSettings(): void

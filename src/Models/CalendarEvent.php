@@ -844,6 +844,85 @@ class CalendarEvent
         self::bumpSyncToken($calId, $row['uri'], 2);
     }
 
+    /**
+     * Shift an event's DTSTART/DTEND to a new date, preserving time-of-day and duration.
+     * Used by the drag-to-reschedule week view.
+     */
+    public static function moveEvent(int $id, string $username, string $newDate, ?int $calendarId = null): void
+    {
+        $pdo   = Database::getInstance();
+        $calId = self::getCalendarId($username, $calendarId);
+        if (!$calId) {
+            return;
+        }
+
+        $stmt = $pdo->prepare('SELECT uri, calendardata FROM calendarobjects WHERE id = ? AND calendarid = ?');
+        $stmt->execute([$id, $calId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return;
+        }
+
+        try {
+            $vcal = Reader::read($row['calendardata']);
+        } catch (\Exception) {
+            return;
+        }
+
+        $component = null;
+        foreach (['VEVENT', 'VTODO', 'VJOURNAL'] as $type) {
+            if (isset($vcal->{$type})) {
+                $component = $vcal->{$type};
+                break;
+            }
+        }
+        if (!$component || !isset($component->DTSTART)) {
+            return;
+        }
+
+        $dtStart    = $component->DTSTART->getDateTime();
+        $allDay     = !$component->DTSTART->hasTime();
+        $targetDate = new \DateTime($newDate, $dtStart->getTimezone());
+
+        if ($allDay) {
+            $component->DTSTART = new \DateTime($newDate);
+            $component->DTSTART['VALUE'] = 'DATE';
+            if (isset($component->DTEND)) {
+                $dtEnd    = $component->DTEND->getDateTime();
+                $duration = $dtStart->diff($dtEnd);
+                $newEnd   = (clone $targetDate)->add($duration);
+                $component->DTEND = $newEnd;
+                $component->DTEND['VALUE'] = 'DATE';
+            }
+        } else {
+            $newStart = new \DateTime(
+                $newDate . ' ' . $dtStart->format('H:i:s'),
+                $dtStart->getTimezone()
+            );
+            $component->DTSTART->setDateTime($newStart);
+            if (isset($component->DTEND)) {
+                $dtEnd    = $component->DTEND->getDateTime();
+                $duration = $dtStart->diff($dtEnd);
+                $newEnd   = (clone $newStart)->add($duration);
+                $component->DTEND->setDateTime($newEnd);
+            }
+        }
+
+        $icalData = $vcal->serialize();
+        $etag     = md5($icalData);
+        $now      = time();
+        [$first, $last] = self::extractOccurrences($icalData);
+
+        $pdo->prepare(
+            'UPDATE calendarobjects
+             SET calendardata = ?, etag = ?, size = ?, lastmodified = ?,
+                 firstoccurence = ?, lastoccurence = ?
+             WHERE id = ?'
+        )->execute([$icalData, $etag, strlen($icalData), $now, $first, $last, $id]);
+
+        self::bumpSyncToken($calId, $row['uri'], 2);
+    }
+
     public static function delete(int $id, string $username, ?int $calendarId = null): void
     {
         $pdo   = Database::getInstance();

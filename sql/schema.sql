@@ -250,6 +250,21 @@ CREATE TABLE IF NOT EXISTS `addressbook_shares` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -------------------------------------------------------
+-- User invite tokens (admin-generated sign-up links)
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `invite_tokens` (
+    `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `token`       VARCHAR(64)  NOT NULL,
+    `created_by`  VARCHAR(50)  NOT NULL,
+    `note`        VARCHAR(255) NOT NULL DEFAULT '',
+    `max_uses`    INT UNSIGNED NOT NULL DEFAULT 1,
+    `uses_count`  INT UNSIGNED NOT NULL DEFAULT 0,
+    `expires_at`  TIMESTAMP    NULL DEFAULT NULL,
+    `created_at`  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `idx_token` (`token`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------
 -- Password reset tokens
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `password_resets` (
