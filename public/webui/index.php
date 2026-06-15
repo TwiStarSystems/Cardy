@@ -81,7 +81,10 @@ $routes = [
         '/admin/users/new'                => [AdminController::class,   'createUser'],
         '/admin/users/{id}/edit'          => [AdminController::class,   'editUser'],
         '/admin/server'                   => [AdminController::class,   'serverSettings'],
+        '/account'                        => [AccountController::class, 'security'],
         '/account/app-passwords'          => [AccountController::class, 'appPasswords'],
+        '/account/totp/cancel'            => [AccountController::class, 'totpCancel'],
+        '/login/totp'                     => [AuthController::class,    'showTotpChallenge'],
     ],
     'POST' => [
         '/login'                          => [AuthController::class,    'processLogin'],
@@ -118,6 +121,11 @@ $routes = [
         '/admin/server'                   => [AdminController::class,   'updateServerSettings'],
         '/account/app-passwords'          => [AccountController::class, 'createAppPassword'],
         '/account/app-passwords/{id}/delete' => [AccountController::class, 'deleteAppPassword'],
+        '/account/totp/setup'             => [AccountController::class, 'totpSetup'],
+        '/account/totp/confirm'           => [AccountController::class, 'totpConfirm'],
+        '/account/totp/disable'           => [AccountController::class, 'totpDisable'],
+        '/account/totp/cancel'            => [AccountController::class, 'totpCancel'],
+        '/login/totp'                     => [AuthController::class,    'verifyTotp'],
     ],
 ];
 

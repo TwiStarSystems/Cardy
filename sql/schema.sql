@@ -191,6 +191,21 @@ CREATE TABLE IF NOT EXISTS `contact_history` (
     KEY `idx_card_id` (`card_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_secret`  VARCHAR(32)  NULL    DEFAULT NULL;
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_enabled` TINYINT(1)  NOT NULL DEFAULT 0;
+
+-- -------------------------------------------------------
+-- Login rate limiting
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `login_attempts` (
+    `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `username`     VARCHAR(50)  NOT NULL DEFAULT '',
+    `ip`           VARCHAR(45)  NOT NULL,
+    `attempted_at` TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_ip_time`       (`ip`, `attempted_at`),
+    KEY `idx_username_time` (`username`, `attempted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- -------------------------------------------------------
 -- App-specific passwords (for DAV clients)
 -- -------------------------------------------------------

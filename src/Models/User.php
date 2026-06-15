@@ -8,6 +8,7 @@ use Cardy\Database;
 class User
 {
     private static bool $roleColumnChecked = false;
+    private static bool $totpColumnsChecked = false;
 
     private static function ensureRoleColumn(): void
     {
@@ -27,6 +28,20 @@ class User
         self::$roleColumnChecked = true;
     }
 
+    private static function ensureTotpColumns(): void
+    {
+        if (self::$totpColumnsChecked) {
+            return;
+        }
+        $pdo = Database::getInstance();
+        $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'totp_secret'");
+        if (!($stmt && $stmt->fetch())) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN totp_secret VARCHAR(32) NULL DEFAULT NULL");
+            $pdo->exec("ALTER TABLE users ADD COLUMN totp_enabled TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        self::$totpColumnsChecked = true;
+    }
+
     private static function normalizeUserRow(array $row): array
     {
         if (empty($row['role'])) {
@@ -43,8 +58,9 @@ class User
     public static function findById(int $id): ?array
     {
         self::ensureRoleColumn();
+        self::ensureTotpColumns();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, created_at FROM users WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, totp_enabled, created_at FROM users WHERE id = ?');
         $stmt->execute([$id]);
         $row = $stmt->fetch() ?: null;
         return $row ? self::normalizeUserRow($row) : null;
@@ -53,11 +69,38 @@ class User
     public static function findByUsername(string $username): ?array
     {
         self::ensureRoleColumn();
+        self::ensureTotpColumns();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, created_at FROM users WHERE username = ?');
+        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, totp_enabled, created_at FROM users WHERE username = ?');
         $stmt->execute([$username]);
         $row = $stmt->fetch() ?: null;
         return $row ? self::normalizeUserRow($row) : null;
+    }
+
+    /** Returns the raw TOTP secret for a user (only used during the 2FA challenge). */
+    public static function getTotpSecret(int $id): ?string
+    {
+        self::ensureTotpColumns();
+        $stmt = Database::getInstance()->prepare('SELECT totp_secret FROM users WHERE id = ? AND totp_enabled = 1');
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        return $row ? ($row['totp_secret'] ?? null) : null;
+    }
+
+    public static function enableTotp(int $id, string $secret): void
+    {
+        self::ensureTotpColumns();
+        Database::getInstance()
+            ->prepare('UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE id = ?')
+            ->execute([$secret, $id]);
+    }
+
+    public static function disableTotp(int $id): void
+    {
+        self::ensureTotpColumns();
+        Database::getInstance()
+            ->prepare('UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?')
+            ->execute([$id]);
     }
 
     public static function all(): array
@@ -75,8 +118,9 @@ class User
     public static function authenticate(string $username, string $password): ?array
     {
         self::ensureRoleColumn();
+        self::ensureTotpColumns();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, password_hash, email, display_name, role, is_admin FROM users WHERE username = ?');
+        $stmt = $pdo->prepare('SELECT id, username, password_hash, email, display_name, role, is_admin, totp_enabled FROM users WHERE username = ?');
         $stmt->execute([$username]);
         $row = $stmt->fetch();
 
