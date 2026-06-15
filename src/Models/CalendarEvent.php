@@ -760,6 +760,23 @@ class CalendarEvent
             throw new \RuntimeException('No calendar found for user.');
         }
 
+        // Quota check
+        $quotaRow = $pdo->prepare('SELECT event_quota FROM users WHERE username = ?');
+        $quotaRow->execute([$username]);
+        $quota = (int) ($quotaRow->fetchColumn() ?: 0);
+        if ($quota > 0) {
+            $countRow = $pdo->prepare(
+                'SELECT COUNT(DISTINCT co.id)
+                 FROM calendarobjects co
+                 JOIN calendarinstances ci ON co.calendarid = ci.calendarid
+                 WHERE ci.principaluri = ? AND ci.access = 1'
+            );
+            $countRow->execute(["principals/{$username}"]);
+            if ((int) $countRow->fetchColumn() >= $quota) {
+                throw new \RuntimeException("Calendar event quota of {$quota} reached. Ask your admin to increase your limit.");
+            }
+        }
+
         $uid       = 'cardy-' . bin2hex(random_bytes(16));
         $data['uid'] = $uid;
         $icalData  = self::buildICal($data);

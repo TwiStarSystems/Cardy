@@ -87,6 +87,25 @@ $post    = $post ?? [];
     </select>
   </div>
 
+  <?php if ($isEdit): ?>
+  <div class="form-group">
+    <label class="form-label">Usage Limits <span class="text-muted" style="font-weight:normal">(0 = unlimited)</span></label>
+    <div class="flex gap-sm" style="align-items:center">
+      <div style="flex:1">
+        <label class="form-hint" style="margin-bottom:4px" for="contact_quota">Contact limit</label>
+        <input class="form-control" type="number" id="contact_quota" name="contact_quota"
+               min="0" value="<?= (int) ($u['contact_quota'] ?? 0) ?>">
+      </div>
+      <div style="flex:1">
+        <label class="form-hint" style="margin-bottom:4px" for="event_quota">Event limit</label>
+        <input class="form-control" type="number" id="event_quota" name="event_quota"
+               min="0" value="<?= (int) ($u['event_quota'] ?? 0) ?>">
+      </div>
+    </div>
+    <div class="form-hint">Set to 0 to allow unlimited contacts or events for this user.</div>
+  </div>
+  <?php endif; ?>
+
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">
       <?= $isEdit ? 'Save Changes' : 'Create User' ?>

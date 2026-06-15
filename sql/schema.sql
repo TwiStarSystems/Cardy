@@ -191,8 +191,10 @@ CREATE TABLE IF NOT EXISTS `contact_history` (
     KEY `idx_card_id` (`card_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_secret`  VARCHAR(32)  NULL    DEFAULT NULL;
-ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_enabled` TINYINT(1)  NOT NULL DEFAULT 0;
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_secret`    VARCHAR(32)    NULL     DEFAULT NULL;
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `totp_enabled`  TINYINT(1)   NOT NULL DEFAULT 0;
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `contact_quota` INT UNSIGNED NOT NULL DEFAULT 0;
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `event_quota`   INT UNSIGNED NOT NULL DEFAULT 0;
 
 -- -------------------------------------------------------
 -- Audit log

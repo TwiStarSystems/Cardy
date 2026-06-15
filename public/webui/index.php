@@ -77,6 +77,7 @@ $routes = [
         '/tasks/new'                      => [TasksController::class,   'create'],
         '/tasks/export'                   => [TasksController::class,   'exportTasks'],
         '/tasks/{id}/edit'                => [TasksController::class,   'edit'],
+        '/admin/dashboard'                => [AdminController::class,   'dashboard'],
         '/admin/users'                    => [AdminController::class,   'users'],
         '/admin/users/new'                => [AdminController::class,   'createUser'],
         '/admin/users/{id}/edit'          => [AdminController::class,   'editUser'],

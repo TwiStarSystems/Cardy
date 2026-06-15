@@ -28,13 +28,15 @@ ob_start();
         <th>Display Name</th>
         <th>Email</th>
         <th>Role</th>
-        <th>Created</th>
+        <th>Contacts</th>
+        <th>Events</th>
+        <th>Last Login</th>
         <th>Actions</th>
       </tr>
     </thead>
     <tbody>
       <?php if (empty($users)): ?>
-      <tr><td colspan="6" class="text-center text-muted" style="padding:var(--spacing-lg)">No users found.</td></tr>
+      <tr><td colspan="8" class="text-center text-muted" style="padding:var(--spacing-lg)">No users found.</td></tr>
       <?php else: ?>
       <?php foreach ($users as $u): ?>
       <tr>
@@ -55,7 +57,23 @@ ob_start();
           <span class="badge badge-muted">User</span>
           <?php endif; ?>
         </td>
-        <td><?= date('Y-m-d', strtotime($u['created_at'])) ?></td>
+        <td>
+          <?php $cq = (int)($u['contact_quota'] ?? 0); $cc = (int)($u['contact_count'] ?? 0); ?>
+          <?= $cc ?><?= $cq > 0 ? ' / ' . $cq : '' ?>
+          <?php if ($cq > 0 && $cc >= $cq): ?>
+          <span class="badge badge-danger" style="margin-left:4px">Full</span>
+          <?php endif; ?>
+        </td>
+        <td>
+          <?php $eq = (int)($u['event_quota'] ?? 0); $ec = (int)($u['event_count'] ?? 0); ?>
+          <?= $ec ?><?= $eq > 0 ? ' / ' . $eq : '' ?>
+          <?php if ($eq > 0 && $ec >= $eq): ?>
+          <span class="badge badge-danger" style="margin-left:4px">Full</span>
+          <?php endif; ?>
+        </td>
+        <td class="text-muted" style="font-size:var(--text-sm)">
+          <?= $u['last_login'] ? date('Y-m-d', strtotime($u['last_login'])) : '—' ?>
+        </td>
         <td>
           <div class="flex gap-xs">
             <a href="/admin/users/<?= (int) $u['id'] ?>/edit" class="btn btn-ghost btn-sm">Edit</a>

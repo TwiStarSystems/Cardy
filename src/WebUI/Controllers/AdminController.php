@@ -36,7 +36,7 @@ class AdminController extends Controller
     {
         $this->requireAdmin();
         $this->render('admin/users', [
-            'users' => User::all(),
+            'users' => User::allWithStats(),
             'csrf'  => $this->csrfToken(),
             'flash' => $this->getFlash(),
         ]);
@@ -130,7 +130,11 @@ class AdminController extends Controller
             return;
         }
 
+        $contactQuota = max(0, (int) ($_POST['contact_quota'] ?? 0));
+        $eventQuota   = max(0, (int) ($_POST['event_quota']   ?? 0));
+
         User::update((int) $params['id'], $email, $displayName, $role);
+        User::setQuotas((int) $params['id'], $contactQuota, $eventQuota);
         $admin = $_SESSION['user']['username'] ?? '';
         AuditLog::record($admin, 'admin.user.update', "Updated user '{$editUser['username']}' (role: {$role})");
 
@@ -170,6 +174,31 @@ class AdminController extends Controller
         AuditLog::record($admin['username'], 'admin.user.delete', "Deleted user '" . ($target['username'] ?? $params['id']) . "'");
         $this->flash('success', 'User deleted.');
         $this->redirect('/admin/users');
+    }
+
+    public function dashboard(): void
+    {
+        $this->requireAdmin();
+        $pdo = \Cardy\Database::getInstance();
+
+        $totalUsers    = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+        $totalContacts = (int) $pdo->query('SELECT COUNT(*) FROM cards')->fetchColumn();
+        $totalEvents   = (int) $pdo->query("SELECT COUNT(*) FROM calendarobjects WHERE componenttype = 'VEVENT'")->fetchColumn();
+        $totalTasks    = (int) $pdo->query("SELECT COUNT(*) FROM calendarobjects WHERE componenttype = 'VTODO'")->fetchColumn();
+
+        $contactBytes = (int) $pdo->query('SELECT COALESCE(SUM(LENGTH(carddata)),0) FROM cards')->fetchColumn();
+        $eventBytes   = (int) $pdo->query('SELECT COALESCE(SUM(LENGTH(calendardata)),0) FROM calendarobjects')->fetchColumn();
+
+        $this->render('admin/dashboard', [
+            'users'         => User::allWithStats(),
+            'totalUsers'    => $totalUsers,
+            'totalContacts' => $totalContacts,
+            'totalEvents'   => $totalEvents,
+            'totalTasks'    => $totalTasks,
+            'contactBytes'  => $contactBytes,
+            'eventBytes'    => $eventBytes,
+            'flash'         => $this->getFlash(),
+        ]);
     }
 
     public function auditLog(): void

@@ -1020,6 +1020,22 @@ class Contact
             throw new \RuntimeException('No address book found for user.');
         }
 
+        // Quota check
+        $quotaRow = $pdo->prepare('SELECT contact_quota FROM users WHERE username = ?');
+        $quotaRow->execute([$username]);
+        $quota = (int) ($quotaRow->fetchColumn() ?: 0);
+        if ($quota > 0) {
+            $countRow = $pdo->prepare(
+                'SELECT COUNT(*) FROM cards c
+                 JOIN addressbooks ab ON ab.id = c.addressbookid
+                 WHERE ab.principaluri = ?'
+            );
+            $countRow->execute(["principals/{$username}"]);
+            if ((int) $countRow->fetchColumn() >= $quota) {
+                throw new \RuntimeException("Contact quota of {$quota} reached. Ask your admin to increase your limit.");
+            }
+        }
+
         $uid      = 'cardy-' . bin2hex(random_bytes(16));
         $data['uid'] = $uid;
         $vcardData = self::buildVCard($data);

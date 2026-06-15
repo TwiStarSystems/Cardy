@@ -7,8 +7,9 @@ use Cardy\Database;
 
 class User
 {
-    private static bool $roleColumnChecked = false;
+    private static bool $roleColumnChecked  = false;
     private static bool $totpColumnsChecked = false;
+    private static bool $quotaColumnsChecked = false;
 
     private static function ensureRoleColumn(): void
     {
@@ -42,6 +43,20 @@ class User
         self::$totpColumnsChecked = true;
     }
 
+    private static function ensureQuotaColumns(): void
+    {
+        if (self::$quotaColumnsChecked) {
+            return;
+        }
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'contact_quota'");
+        if (!($stmt && $stmt->fetch())) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN contact_quota INT UNSIGNED NOT NULL DEFAULT 0");
+            $pdo->exec("ALTER TABLE users ADD COLUMN event_quota INT UNSIGNED NOT NULL DEFAULT 0");
+        }
+        self::$quotaColumnsChecked = true;
+    }
+
     private static function normalizeUserRow(array $row): array
     {
         if (empty($row['role'])) {
@@ -59,8 +74,9 @@ class User
     {
         self::ensureRoleColumn();
         self::ensureTotpColumns();
+        self::ensureQuotaColumns();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, totp_enabled, created_at FROM users WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, totp_enabled, contact_quota, event_quota, created_at FROM users WHERE id = ?');
         $stmt->execute([$id]);
         $row = $stmt->fetch() ?: null;
         return $row ? self::normalizeUserRow($row) : null;
@@ -70,8 +86,9 @@ class User
     {
         self::ensureRoleColumn();
         self::ensureTotpColumns();
+        self::ensureQuotaColumns();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, totp_enabled, created_at FROM users WHERE username = ?');
+        $stmt = $pdo->prepare('SELECT id, username, email, display_name, role, is_admin, totp_enabled, contact_quota, event_quota, created_at FROM users WHERE username = ?');
         $stmt->execute([$username]);
         $row = $stmt->fetch() ?: null;
         return $row ? self::normalizeUserRow($row) : null;
@@ -106,9 +123,57 @@ class User
     public static function all(): array
     {
         self::ensureRoleColumn();
+        self::ensureQuotaColumns();
         $pdo  = Database::getInstance();
-        $stmt = $pdo->query('SELECT id, username, email, display_name, role, is_admin, created_at FROM users ORDER BY username');
+        $stmt = $pdo->query('SELECT id, username, email, display_name, role, is_admin, contact_quota, event_quota, created_at FROM users ORDER BY username');
         return array_map([self::class, 'normalizeUserRow'], $stmt->fetchAll());
+    }
+
+    /**
+     * Returns all users with live contact/event counts and last-login timestamp.
+     * Used by the admin dashboard.
+     */
+    public static function allWithStats(): array
+    {
+        self::ensureRoleColumn();
+        self::ensureQuotaColumns();
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->query(
+            "SELECT
+                u.id, u.username, u.role, u.is_admin, u.contact_quota, u.event_quota, u.created_at,
+                (SELECT COUNT(*)
+                 FROM cards c
+                 JOIN addressbooks ab ON ab.id = c.addressbookid
+                 WHERE ab.principaluri = CONCAT('principals/', u.username)) AS contact_count,
+                (SELECT COUNT(DISTINCT co.id)
+                 FROM calendarobjects co
+                 JOIN calendarinstances ci ON co.calendarid = ci.calendarid
+                 WHERE ci.principaluri = CONCAT('principals/', u.username) AND ci.access = 1) AS event_count,
+                (SELECT al.created_at
+                 FROM audit_log al
+                 WHERE al.username = u.username AND al.action LIKE 'login%'
+                 ORDER BY al.created_at DESC LIMIT 1) AS last_login
+             FROM users u
+             ORDER BY u.username"
+        );
+        return array_map([self::class, 'normalizeUserRow'], $stmt->fetchAll());
+    }
+
+    public static function setQuotas(int $userId, int $contactQuota, int $eventQuota): void
+    {
+        self::ensureQuotaColumns();
+        Database::getInstance()
+            ->prepare('UPDATE users SET contact_quota = ?, event_quota = ? WHERE id = ?')
+            ->execute([max(0, $contactQuota), max(0, $eventQuota), $userId]);
+    }
+
+    public static function getQuota(string $username): array
+    {
+        self::ensureQuotaColumns();
+        $stmt = Database::getInstance()->prepare('SELECT contact_quota, event_quota FROM users WHERE username = ?');
+        $stmt->execute([$username]);
+        $row = $stmt->fetch();
+        return $row ? ['contact' => (int)$row['contact_quota'], 'event' => (int)$row['event_quota']] : ['contact' => 0, 'event' => 0];
     }
 
     // -------------------------------------------------------
