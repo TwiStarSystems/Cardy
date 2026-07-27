@@ -226,6 +226,7 @@ class User
         string $role = 'user'
     ): int {
         self::ensureRoleColumn();
+        CalendarEvent::ensureCalendarOrderColumn();
         $pdo  = Database::getInstance();
         $role = strtolower(trim($role)) === 'admin' ? 'admin' : 'user';
         $isAdmin = $role === 'admin';

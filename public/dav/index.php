@@ -27,6 +27,8 @@ if (!file_exists($configPath)) {
 
 $pdo = \Cardy\Database::getInstance();
 
+\Cardy\Models\CalendarEvent::ensureCalendarOrderColumn();
+
 // -------------------------------------------------------
 // SabreDAV backends
 // -------------------------------------------------------

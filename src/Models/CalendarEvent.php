@@ -13,6 +13,26 @@ use Sabre\VObject\Reader;
  */
 class CalendarEvent
 {
+    private static bool $calendarOrderColumnChecked = false;
+
+    /**
+     * sabre/dav's CalDAV\Backend\PDO::getCalendarsForUser() selects and
+     * ORDER BYs `calendarorder` unconditionally, so DAV calendar discovery
+     * (calendar-home-set enumeration) throws if this column is missing.
+     */
+    public static function ensureCalendarOrderColumn(): void
+    {
+        if (self::$calendarOrderColumnChecked) {
+            return;
+        }
+        $pdo  = Database::getInstance();
+        $stmt = $pdo->query("SHOW COLUMNS FROM calendarinstances LIKE 'calendarorder'");
+        if (!($stmt && $stmt->fetch())) {
+            $pdo->exec("ALTER TABLE calendarinstances ADD COLUMN calendarorder INT UNSIGNED NOT NULL DEFAULT 0 AFTER description");
+        }
+        self::$calendarOrderColumnChecked = true;
+    }
+
     // -------------------------------------------------------
     // Calendar helpers
     // -------------------------------------------------------
@@ -192,6 +212,7 @@ class CalendarEvent
      */
     public static function createCalendar(string $username, string $displayName, string $color = '#9600E1'): array
     {
+        self::ensureCalendarOrderColumn();
         $pdo         = Database::getInstance();
         $displayName = trim($displayName) ?: 'New Calendar';
         $baseSlug    = self::slugify($displayName);

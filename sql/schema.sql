@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS `calendarinstances` (
     `displayname`         VARCHAR(100),
     `uri`                 VARBINARY(200),
     `description`         MEDIUMTEXT,
+    `calendarorder`       INT UNSIGNED NOT NULL DEFAULT 0,
     `calendarcolor`       VARBINARY(10),
     `timezone`            MEDIUMTEXT,
     `transparent`         TINYINT(1) NOT NULL DEFAULT 0,
